@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   postgres:
@@ -50,7 +49,8 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:v0.1.0
+    image: ghcr.io/insforge/insforge-oss:v0.1.0-amd64
+    working_dir: /app
     restart: unless-stopped
     depends_on:
       vector:
