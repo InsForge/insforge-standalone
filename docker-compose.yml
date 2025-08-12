@@ -29,9 +29,6 @@ services:
     container_name: insforge-postgrest
     restart: unless-stopped
     environment:
-      # POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      # POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      # POSTGRES_DB: ${POSTGRES_DB:-insforge}
       PGRST_DB_URI: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
       PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
       PGRST_DB_SCHEMA: public
@@ -49,7 +46,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:v0.1.0-amd64
+    image: ghcr.io/insforge/insforge-oss:v0.1.1
     working_dir: /app
     restart: unless-stopped
     depends_on:
@@ -89,10 +86,11 @@ services:
       - AWS_REGION=${AWS_REGION:-}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-}
+      # Multi-tenant Cloud Configuration
+      - DEPLOYMENT_ID=${DEPLOYMENT_ID:-}
+      - PROJECT_ID=${PROJECT_ID:-}
       - APP_KEY=${APP_KEY:-}
-      # Better Auth Migration
-      - ENABLE_BETTER_AUTH=${ENABLE_BETTER_AUTH:-false}
-      - VITE_ENABLE_BETTER_AUTH=${ENABLE_BETTER_AUTH:-false}
+      - ACCESS_API_KEY=${ACCESS_API_KEY:-}
     networks:
       - insforge-network
 
@@ -164,14 +162,6 @@ services:
 
 volumes:
   postgres-data:
-    driver: local
-  node_modules:
-    driver: local
-  backend_node_modules:
-    driver: local
-  frontend_node_modules:
-    driver: local
-  shared_schemas_node_modules:
     driver: local
   deno_cache:
     driver: local
