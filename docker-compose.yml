@@ -46,7 +46,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:v0.1.4
+    image: ghcr.io/insforge/insforge-oss:v0.1.5
     working_dir: /app
     restart: unless-stopped
     depends_on:
