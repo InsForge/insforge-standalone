@@ -152,6 +152,9 @@ services:
       retries: 3
     environment:
       LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      AWS_REGION: ${AWS_REGION}
+      PROJECT_ID: ${PROJECT_ID}
+      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE}
     command:
       [
         "--config",
