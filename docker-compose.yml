@@ -48,8 +48,6 @@ services:
     container_name: insforge
     image: ghcr.io/insforge/insforge-oss:v0.1.5
     working_dir: /app
-    args:
-      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:7130}
     restart: unless-stopped
     depends_on:
       vector:
