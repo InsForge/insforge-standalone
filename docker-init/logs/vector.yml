@@ -198,3 +198,32 @@ sinks:
     encoding:
       codec: 'json'
     compression: 'gzip'
+    
+  # CloudWatch structured sinks (Vector -> CloudWatch). Use distinct stream names to avoid conflicts
+  cw_insforge:
+    type: aws_cloudwatch_logs
+    inputs:
+      - insforge_logs
+    region: ${AWS_REGION}
+    group_name: /insforge/${PROJECT_ID}
+    stream_name: ${HOSTNAME_OVERRIDE}-insforge-vector
+    encoding:
+      codec: json
+  cw_rest:
+    type: aws_cloudwatch_logs
+    inputs:
+      - rest_logs
+    region: ${AWS_REGION}
+    group_name: /insforge/${PROJECT_ID}
+    stream_name: ${HOSTNAME_OVERRIDE}-postgrest-vector
+    encoding:
+      codec: json
+  cw_db:
+    type: aws_cloudwatch_logs
+    inputs:
+      - db_logs
+    region: ${AWS_REGION}
+    group_name: /insforge/${PROJECT_ID}
+    stream_name: ${HOSTNAME_OVERRIDE}-postgres-vector
+    encoding:
+      codec: json

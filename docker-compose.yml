@@ -93,6 +93,10 @@ services:
       - ACCESS_API_KEY=${ACCESS_API_KEY:-}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
       - AWS_INSTANCE_PROFILE_NAME=${AWS_INSTANCE_PROFILE_NAME}
+      # Analytics (CloudWatch)
+      - ANALYTICS_PROVIDER=${ANALYTICS_PROVIDER:-cloudwatch}
+      - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP}
+      - HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-}
     networks:
       - insforge-network
 
@@ -152,6 +156,9 @@ services:
       retries: 3
     environment:
       LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
+      AWS_REGION: ${AWS_REGION:-us-east-2}
+      PROJECT_ID: ${PROJECT_ID:-}
+      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-}
     command:
       [
         "--config",
