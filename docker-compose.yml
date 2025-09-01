@@ -34,6 +34,12 @@ services:
       PGRST_DB_SCHEMA: public
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
+      # Connection pool settings (CRITICAL for stability)
+      PGRST_DB_POOL: 50                    # Max connections in pool (default: 10)
+      PGRST_DB_POOL_TIMEOUT: 10            # Seconds to wait for connection (default: 10)
+      PGRST_DB_POOL_ACQUISITION_TIMEOUT: 10 # Max time to acquire connection
+      # Server performance settings
+      PGRST_MAX_ROWS: 1000                 # Limit result set size
     ports:
       - "5430:3000"
     depends_on:
@@ -46,7 +52,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v0.2.0}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v0.2.4}
     working_dir: /app
     restart: unless-stopped
     depends_on:
