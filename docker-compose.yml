@@ -20,9 +20,19 @@ services:
       - insforge-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    # Add logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Ensure proper shutdown
+    stop_grace_period: 30s
+    stop_signal: SIGINT
 
   postgrest:
     image: postgrest/postgrest:v12.2.12
@@ -49,10 +59,15 @@ services:
         condition: service_healthy
     networks:
       - insforge-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v0.2.4}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v0.2.5}
     working_dir: /app
     restart: unless-stopped
     depends_on:
@@ -105,6 +120,11 @@ services:
       - HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-}
     networks:
       - insforge-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   deno:
     image: denoland/deno:alpine-2.0.6
@@ -139,6 +159,11 @@ services:
     restart: unless-stopped
     networks:
       - insforge-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   vector:
     container_name: insforge-vector
@@ -174,6 +199,11 @@ services:
       - "label=disable"
     networks:
       - insforge-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres-data:
