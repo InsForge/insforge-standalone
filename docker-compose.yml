@@ -56,8 +56,6 @@ services:
     ports:
       - "5430:3000"
     depends_on:
-      vector:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     networks:
@@ -74,8 +72,6 @@ services:
     working_dir: /app
     restart: unless-stopped
     depends_on:
-      vector:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
@@ -162,46 +158,6 @@ services:
         deno run --allow-net --allow-env --allow-read=./functions/worker-template.js --watch functions/server.ts
       "
     restart: unless-stopped
-    networks:
-      - insforge-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  vector:
-    container_name: insforge-vector
-    image: timberio/vector:0.28.1-alpine
-    restart: unless-stopped
-    volumes:
-      - ./docker-init/logs/vector.yml:/etc/vector/vector.yml:ro,z
-      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://vector:7135/health"
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    environment:
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
-      AWS_REGION: ${AWS_REGION:-us-east-2}
-      PROJECT_ID: ${PROJECT_ID:-}
-      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-}
-    command:
-      [
-        "--config",
-        "/etc/vector/vector.yml"
-      ]
-    security_opt:
-      - "label=disable"
     networks:
       - insforge-network
     logging:
