@@ -70,7 +70,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v0.2.7}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.0.0}
     working_dir: /app
     restart: unless-stopped
     depends_on:
@@ -188,7 +188,6 @@ services:
       interval: 5s
       retries: 3
     environment:
-      LOGFLARE_PUBLIC_ACCESS_TOKEN: ${LOGFLARE_PUBLIC_ACCESS_TOKEN}
       AWS_REGION: us-east-2
       PROJECT_ID: ${PROJECT_ID:-}
       HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-}
