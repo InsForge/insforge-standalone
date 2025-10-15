@@ -140,6 +140,8 @@ services:
     environment:
       - DENO_ENV=${DENO_ENV:-development}
       - DENO_DIR=/deno-dir
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-please-change-in-production}
       # PostgreSQL connection
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
