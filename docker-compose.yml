@@ -97,7 +97,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGREST_BASE_URL=http://postgrest:3000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
-  
+      - CLOUD_API_HOST=${CLOUD_API_HOST}
       # Deno Runtime URL
       - DENO_RUNTIME_URL=http://deno:7133
       # OAuth Configuration
@@ -108,9 +108,12 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-http://localhost:7130/api/auth/v1/callback}
       # Storage Configuration
-      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-}
+      - AWS_S3_BUCKET=${AWS_S3_BUCKET:-insforge-storage}
       - AWS_REGION=us-east-2
       - AWS_INSTANCE_PROFILE_NAME=${AWS_INSTANCE_PROFILE_NAME}
+      - AWS_CLOUDFRONT_URL=${AWS_CLOUDFRONT_URL:-}
+      - AWS_CLOUDFRONT_KEY_PAIR_ID=${AWS_CLOUDFRONT_KEY_PAIR_ID}
+      - AWS_CLOUDFRONT_PRIVATE_KEY=${AWS_CLOUDFRONT_PRIVATE_KEY}
       # Multi-tenant Cloud Configuration
       - DEPLOYMENT_ID=${DEPLOYMENT_ID:-}
       - PROJECT_ID=${PROJECT_ID:-}
