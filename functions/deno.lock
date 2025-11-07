@@ -1,5 +1,100 @@
 {
   "version": "4",
+  "specifiers": {
+    "npm:@insforge/sdk@*": "0.0.46",
+    "npm:@insforge/sdk@0.0.39": "0.0.39",
+    "npm:@insforge/sdk@0.0.40": "0.0.40",
+    "npm:@insforge/sdk@0.0.41": "0.0.41",
+    "npm:@insforge/sdk@0.0.42": "0.0.42",
+    "npm:@insforge/sdk@0.0.45": "0.0.45",
+    "npm:@insforge/sdk@0.0.46": "0.0.46",
+    "npm:@insforge/sdk@latest": "0.0.37"
+  },
+  "npm": {
+    "@insforge/sdk@0.0.37": {
+      "integrity": "sha512-Sd0dSSzC+oD80hexBjEanMY0SfliShoVbDiGNsD72qJqdOchaM0nBtLDKep+AoXrQCWDXbxkrxt06vFaxmiNvA==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.39": {
+      "integrity": "sha512-GDjr/TcbuOI/R89uBu3mLipwq1Ahjs+Y5Iu4ca5eZm9cTSOxKzubFrKJg+Kvc/Biiz8y4540+OsypLMVPPIrhg==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.40": {
+      "integrity": "sha512-YAvTNG0uc4JuRBR9YGclCqWl0HQCr64DYshsch8wHz856b10BFkV2hIIfRoKsT/xJv82NdiM8baDZzVldboKKA==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.41": {
+      "integrity": "sha512-xUeWI1mHU+fkeR0pQ3nx1CUC6R+dhBn4RDQRIx0qw53df3UZdz+oItnAzUP0KsOTE95YsE64xcrIxuHrfo7geA==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.42": {
+      "integrity": "sha512-wXZI2WRm7YCaMdtCGDUmzOL3BzRCHBheMEheHvHVEgX0m0y0s9kCywbEeIttrSPrayPLjmKIQ5Sn9X3i6DJFew==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.45": {
+      "integrity": "sha512-NORYi90aPKXnXKB7VdB/gOHAvgjecE0t5f1KkfDfY6tUJ1hQ4bXt1sHjTQcH1H5jgLQTZ5podDWmnxyOrhhmrg==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/sdk@0.0.46": {
+      "integrity": "sha512-EvRm8lrs3hxtEObBXOU9c1JoatoHMwX8E0UVa42SFapSlTVJE1vnch3hx7ibw8j4OMFM5siXeyWliX9B7fr9ZQ==",
+      "dependencies": [
+        "@insforge/shared-schemas",
+        "@supabase/postgrest-js"
+      ]
+    },
+    "@insforge/shared-schemas@1.0.7": {
+      "integrity": "sha512-ghwHoxkalewt/+nkgG5GXJA9ctXehmxj8GlVawolXEUN63HUKNGMgpUQiJzW8Y9E190ZbCJSvKTDmR/JcQKSvg==",
+      "dependencies": [
+        "zod"
+      ]
+    },
+    "@supabase/node-fetch@2.6.15": {
+      "integrity": "sha512-1ibVeYUacxWYi9i0cf5efil6adJ9WRyZBLivgjs+AUpewx1F3xPi7gLgaASI2SmIQxPoCEjAsLAzKPgMJVgOUQ==",
+      "dependencies": [
+        "whatwg-url"
+      ]
+    },
+    "@supabase/postgrest-js@1.21.4": {
+      "integrity": "sha512-TxZCIjxk6/dP9abAi89VQbWWMBbybpGWyvmIzTd79OeravM13OjR/YEYeyUOPcM1C3QyvXkvPZhUfItvmhY1IQ==",
+      "dependencies": [
+        "@supabase/node-fetch"
+      ]
+    },
+    "tr46@0.0.3": {
+      "integrity": "sha512-N3WMsuqV66lT30CrXNbEjx4GEwlow3v6rr4mCcv6prnfwhS01rkgyFdjPNBYd9br7LpXV1+Emh01fHnq2Gdgrw=="
+    },
+    "webidl-conversions@3.0.1": {
+      "integrity": "sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ=="
+    },
+    "whatwg-url@5.0.0": {
+      "integrity": "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==",
+      "dependencies": [
+        "tr46",
+        "webidl-conversions"
+      ]
+    },
+    "zod@3.25.76": {
+      "integrity": "sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ=="
+    }
+  },
   "remote": {
     "https://deno.land/std@0.160.0/_util/assert.ts": "e94f2eb37cebd7f199952e242c77654e43333c1ac4c5c700e929ea3aa5489f74",
     "https://deno.land/std@0.160.0/_util/os.ts": "8a33345f74990e627b9dfe2de9b040004b08ea5146c7c9e8fe9a29070d193934",
@@ -46,6 +141,8 @@
     "https://deno.land/std@0.160.0/testing/asserts.ts": "1e340c589853e82e0807629ba31a43c84ebdcdeca910c4a9705715dfdb0f5ce8",
     "https://deno.land/std@0.224.0/assert/assert.ts": "09d30564c09de846855b7b071e62b5974b001bb72a4b797958fe0660e7849834",
     "https://deno.land/std@0.224.0/assert/assertion_error.ts": "ba8752bd27ebc51f723702fac2f54d3e94447598f54264a6653d6413738a8917",
+    "https://deno.land/std@0.224.0/encoding/_util.ts": "beacef316c1255da9bc8e95afb1fa56ed69baef919c88dc06ae6cb7a6103d376",
+    "https://deno.land/std@0.224.0/encoding/base64.ts": "dd59695391584c8ffc5a296ba82bcdba6dd8a84d41a6a539fbee8e5075286eaf",
     "https://deno.land/std@0.224.0/path/_common/assert_path.ts": "dbdd757a465b690b2cc72fc5fb7698c51507dec6bfafce4ca500c46b76ff7bd8",
     "https://deno.land/std@0.224.0/path/_common/basename.ts": "569744855bc8445f3a56087fd2aed56bdad39da971a8d92b138c9913aecc5fa2",
     "https://deno.land/std@0.224.0/path/_common/common.ts": "ef73c2860694775fe8ffcbcdd387f9f97c7a656febf0daa8c73b56f4d8a7bd4c",

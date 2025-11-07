@@ -9,6 +9,8 @@
 
 // Import SDK at worker level - this will be available to all functions
 import { createClient } from 'npm:@insforge/sdk';
+// Import base64 utilities for encoding/decoding
+import { encodeBase64, decodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 // Handle the single message with code, request data, and secrets
 self.onmessage = async (e) => {
@@ -48,17 +50,26 @@ self.onmessage = async (e) => {
      * - module.exports (to export their function)
      * - createClient (the Insforge SDK)
      * - Deno (for Deno.env.get() etc.)
+     * - encodeBase64, decodeBase64 (base64 encoding utilities)
      *
      * We inject our mockDeno as the 'Deno' parameter, so when the user's code
      * calls Deno.env.get('MY_SECRET'), it's actually calling mockDeno.env.get('MY_SECRET')
      */
-    const wrapper = new Function('exports', 'module', 'createClient', 'Deno', code);
+    const wrapper = new Function(
+      'exports',
+      'module',
+      'createClient',
+      'Deno',
+      'encodeBase64',
+      'decodeBase64',
+      code
+    );
     const exports = {};
     const module = { exports };
 
-    // Execute the wrapper, passing mockDeno as the Deno global
-    // This makes Deno.env.get() available inside the user's function
-    wrapper(exports, module, createClient, mockDeno);
+    // Execute the wrapper, passing mockDeno as the Deno global and utility functions
+    // This makes Deno.env.get(), encodeBase64(), and decodeBase64() available inside the user's function
+    wrapper(exports, module, createClient, mockDeno, encodeBase64, decodeBase64);
 
     // Get the exported function
     const functionHandler = module.exports || exports.default || exports;
