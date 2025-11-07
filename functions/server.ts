@@ -80,7 +80,7 @@ async function getFunctionCode(slug: string): Promise<string | null> {
       WHERE slug = ${slug} AND status = 'active'
     `;
 
-    if (result.rows.length === 0) {
+    if (!result.rows.length) {
       return null;
     }
 
@@ -244,6 +244,7 @@ Deno.serve({ port }, async (req: Request) => {
   const slugMatch = pathname.match(/^\/([a-zA-Z0-9_-]+)$/);
   if (slugMatch) {
     const slug = slugMatch[1];
+    const startTime = Date.now();
 
     // Get function code from database
     const code = await getFunctionCode(slug);
@@ -257,9 +258,33 @@ Deno.serve({ port }, async (req: Request) => {
 
     // Execute in worker with original request
     try {
-      return await executeInWorker(code, req);
+      const response = await executeInWorker(code, req);
+      const duration = Date.now() - startTime;
+
+      // Log completed invocations only
+      console.log(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'info',
+          slug,
+          method: req.method,
+          status: response.status,
+          duration: `${duration}ms`,
+        })
+      );
+
+      return response;
     } catch (error) {
-      console.error(`Failed to execute function ${slug}:`, error);
+      const duration = Date.now() - startTime;
+      console.error(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'error',
+          slug,
+          error: error instanceof Error ? error.message : String(error),
+          duration: `${duration}ms`,
+        })
+      );
       return new Response(JSON.stringify({ error: 'Function execution failed' }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
