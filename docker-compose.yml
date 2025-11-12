@@ -234,41 +234,41 @@ services:
       environment: "production"
 
   # container metrics collection
-  cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.47.0
-    container_name: cadvisor
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    volumes:
-      - /:/rootfs:ro
-      - /var/run:/var/run:ro
-      - /sys:/sys:ro
-      - /var/lib/docker/:/var/lib/docker:ro
-      - /dev/disk/:/dev/disk:ro
-    privileged: true
-    devices:
-      - /dev/kmsg
-    labels:
-      project_id: "${PROJECT_ID}"
-    networks:
-      - insforge-network
+  # cadvisor:
+  #   image: gcr.io/cadvisor/cadvisor:v0.47.0
+  #   container_name: cadvisor
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - /:/rootfs:ro
+  #     - /var/run:/var/run:ro
+  #     - /sys:/sys:ro
+  #     - /var/lib/docker/:/var/lib/docker:ro
+  #     - /dev/disk/:/dev/disk:ro
+  #   privileged: true
+  #   devices:
+  #     - /dev/kmsg
+  #   labels:
+  #     project_id: "${PROJECT_ID}"
+  #   networks:
+  #     - insforge-network
 
   # postgres metrics collection
-  postgres-exporter:
-    image: prometheuscommunity/postgres-exporter:v0.15.0
-    container_name: postgres-exporter
-    restart: unless-stopped
-    ports:
-      - "9187:9187"
-    environment:
-      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}?sslmode=disable"
-    depends_on:
-      - postgres
-    labels:
-      project_id: "${PROJECT_ID}"
-    networks:
-      - insforge-network
+  # postgres-exporter:
+  #   image: prometheuscommunity/postgres-exporter:v0.15.0
+  #   container_name: postgres-exporter
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9187:9187"
+  #   environment:
+  #     DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}?sslmode=disable"
+  #   depends_on:
+  #     - postgres
+  #   labels:
+  #     project_id: "${PROJECT_ID}"
+  #   networks:
+  #     - insforge-network
 
 volumes:
   postgres-data:
