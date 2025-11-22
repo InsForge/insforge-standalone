@@ -70,7 +70,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.2.4}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.2.6}
     working_dir: /app
     restart: unless-stopped
     depends_on:
