@@ -159,47 +159,6 @@ transforms:
       }
 
 sinks:
-  file_insforge:
-    type: 'file'
-    inputs:
-      - insforge_logs
-    path: '/logs/insforge.log'
-    encoding:
-      codec: 'json'
-    compression: 'gzip'
-  file_deno:
-    type: 'file'
-    inputs:
-      - deno_logs
-    path: '/logs/deno.log'
-    encoding:
-      codec: 'json'
-    compression: 'gzip'
-  file_realtime:
-    type: 'file'
-    inputs:
-      - realtime_logs
-    path: '/logs/realtime.log'
-    encoding:
-      codec: 'json'
-    compression: 'gzip'
-  file_rest:
-    type: 'file'
-    inputs:
-      - rest_logs
-    path: '/logs/postgrest.log'
-    encoding:
-      codec: 'json'
-    compression: 'gzip'
-  file_db:
-    type: 'file'
-    inputs:
-      - db_logs
-    path: '/logs/postgres.log'
-    encoding:
-      codec: 'json'
-    compression: 'gzip'
-    
   # CloudWatch structured sinks (Vector -> CloudWatch). Use distinct stream names to avoid conflicts
   cw_insforge:
     type: aws_cloudwatch_logs
