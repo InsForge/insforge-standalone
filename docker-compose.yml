@@ -4,6 +4,13 @@ services:
     image: ghcr.io/insforge/postgres:v15.13.0
     container_name: insforge-postgres
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+          cpus: '0.5'
+        reservations:
+          memory: 30M
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -38,6 +45,13 @@ services:
     image: postgrest/postgrest:v12.2.12
     container_name: insforge-postgrest
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+          cpus: '0.3'
+        reservations:
+          memory: 20M
     environment:
       PGRST_DB_URI: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
       PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3000
@@ -56,8 +70,6 @@ services:
     ports:
       - "5430:3000"
     depends_on:
-      vector:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     networks:
@@ -73,9 +85,14 @@ services:
     image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.2.10}
     working_dir: /app
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 150M
+          cpus: '0.5'
+        reservations:
+          memory: 50M
     depends_on:
-      vector:
-        condition: service_healthy
       postgres:
         condition: service_healthy
     ports:
@@ -135,6 +152,13 @@ services:
     image: denoland/deno:alpine-2.0.6
     container_name: insforge-deno
     working_dir: /app
+    deploy:
+      resources:
+        limits:
+          memory: 100M
+          cpus: '0.3'
+        reservations:
+          memory: 30M
     depends_on:
       - postgres
       - postgrest
@@ -176,6 +200,13 @@ services:
     container_name: insforge-vector
     image: timberio/vector:0.28.1-alpine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 50M
+          cpus: '0.2'
+        reservations:
+          memory: 20M
     volumes:
       - ./docker-init/logs/vector.yml:/etc/vector/vector.yml:ro,z
       - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
@@ -216,6 +247,13 @@ services:
     image: prom/node-exporter:v1.7.0
     container_name: node-exporter
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 20M
+          cpus: '0.1'
+        reservations:
+          memory: 10M
     network_mode: host  # use host network
     pid: host
     ports:
@@ -232,43 +270,6 @@ services:
     labels:
       project_id: "${PROJECT_ID}"
       environment: "production"
-
-  # container metrics collection
-  # cadvisor:
-  #   image: gcr.io/cadvisor/cadvisor:v0.47.0
-  #   container_name: cadvisor
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8080:8080"
-  #   volumes:
-  #     - /:/rootfs:ro
-  #     - /var/run:/var/run:ro
-  #     - /sys:/sys:ro
-  #     - /var/lib/docker/:/var/lib/docker:ro
-  #     - /dev/disk/:/dev/disk:ro
-  #   privileged: true
-  #   devices:
-  #     - /dev/kmsg
-  #   labels:
-  #     project_id: "${PROJECT_ID}"
-  #   networks:
-  #     - insforge-network
-
-  # postgres metrics collection
-  # postgres-exporter:
-  #   image: prometheuscommunity/postgres-exporter:v0.15.0
-  #   container_name: postgres-exporter
-  #   restart: unless-stopped
-  #   ports:
-  #     - "9187:9187"
-  #   environment:
-  #     DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}?sslmode=disable"
-  #   depends_on:
-  #     - postgres
-  #   labels:
-  #     project_id: "${PROJECT_ID}"
-  #   networks:
-  #     - insforge-network
 
 volumes:
   postgres-data:
