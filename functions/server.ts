@@ -68,17 +68,33 @@ const dbConfig = {
   port: parseInt(Deno.env.get('POSTGRES_PORT') || '5432', 10),
 };
 
-// Get function code from database
+// TODO: Remove fallback to old schema (_functions, _secrets) after migration is complete
+// Get function code from database (supports both old and new schema)
 async function getFunctionCode(slug: string): Promise<string | null> {
   const client = new Client(dbConfig);
 
   try {
     await client.connect();
 
-    const result = await client.queryObject<{ code: string }>`
-      SELECT code FROM _functions 
-      WHERE slug = ${slug} AND status = 'active'
+    // Check if new schema exists and query it
+    const schemaCheck = await client.queryObject<{ exists: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'functions' AND table_name = 'definitions'
+      ) as exists
     `;
+
+    const useNewSchema = schemaCheck.rows[0]?.exists;
+
+    const result = useNewSchema
+      ? await client.queryObject<{ code: string }>`
+          SELECT code FROM functions.definitions
+          WHERE slug = ${slug} AND status = 'active'
+        `
+      : await client.queryObject<{ code: string }>`
+          SELECT code FROM _functions
+          WHERE slug = ${slug} AND status = 'active'
+        `;
 
     if (!result.rows.length) {
       return null;
@@ -93,7 +109,7 @@ async function getFunctionCode(slug: string): Promise<string | null> {
   }
 }
 
-// Get all secrets from main secrets table and decrypt them
+// Get all secrets from main secrets table and decrypt them (supports both old and new schema)
 async function getFunctionSecrets(): Promise<Record<string, string>> {
   const client = new Client(dbConfig);
 
@@ -107,16 +123,29 @@ async function getFunctionSecrets(): Promise<Record<string, string>> {
       return {};
     }
 
-    // Fetch all active secrets from _secrets table
-    const result = await client.queryObject<{
-      key: string;
-      value_ciphertext: string;
-    }>`
-      SELECT key, value_ciphertext 
-      FROM _secrets
-      WHERE is_active = true 
-        AND (expires_at IS NULL OR expires_at > NOW())
+    // Check if new schema exists
+    const schemaCheck = await client.queryObject<{ exists: boolean }>`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = 'system' AND table_name = 'secrets'
+      ) as exists
     `;
+
+    const useNewSchema = schemaCheck.rows[0]?.exists;
+
+    const result = useNewSchema
+      ? await client.queryObject<{ key: string; value_ciphertext: string }>`
+          SELECT key, value_ciphertext
+          FROM system.secrets
+          WHERE is_active = true
+            AND (expires_at IS NULL OR expires_at > NOW())
+        `
+      : await client.queryObject<{ key: string; value_ciphertext: string }>`
+          SELECT key, value_ciphertext
+          FROM _secrets
+          WHERE is_active = true
+            AND (expires_at IS NULL OR expires_at > NOW())
+        `;
 
     const secrets: Record<string, string> = {};
 
