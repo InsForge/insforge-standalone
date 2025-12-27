@@ -3,6 +3,7 @@ services:
   postgres:
     image: ghcr.io/insforge/postgres:v15.13.0
     container_name: insforge-postgres
+    restart: unless-stopped
     command: postgres -c config_file=/etc/postgresql/postgresql.conf
     deploy:
       resources:
