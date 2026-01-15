@@ -4,7 +4,7 @@ services:
     image: ghcr.io/insforge/postgres:v15.13.0
     container_name: insforge-postgres
     restart: unless-stopped
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c app.encryption_key='${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}'
     deploy:
       resources:
         limits:
