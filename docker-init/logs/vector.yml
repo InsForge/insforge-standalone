@@ -187,3 +187,12 @@ sinks:
     stream_name: ${HOSTNAME_OVERRIDE}-postgres-vector
     encoding:
       codec: json
+  cw_deno:
+    type: aws_cloudwatch_logs
+    inputs:
+      - deno_logs
+    region: ${AWS_REGION}
+    group_name: /insforge/${PROJECT_ID}
+    stream_name: ${HOSTNAME_OVERRIDE}-function-vector
+    encoding:
+      codec: json
