@@ -118,6 +118,9 @@ services:
       - CLOUD_API_HOST=${CLOUD_API_HOST}
       # Deno Runtime URL
       - DENO_RUNTIME_URL=http://deno:7133
+      # Deno Deploy Configuration
+      - DENO_DEPLOY_TOKEN=${DENO_DEPLOY_TOKEN:-}
+      - DENO_DEPLOY_ORG_ID=${DENO_DEPLOY_ORG_ID:-}
       # OAuth Configuration
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
