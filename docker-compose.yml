@@ -129,7 +129,6 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-http://localhost:7130/api/auth/v1/callback}
       # Storage Configuration
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-insforge-storage}
       - AWS_REGION=us-east-2
       - AWS_INSTANCE_PROFILE_NAME=${AWS_INSTANCE_PROFILE_NAME}
