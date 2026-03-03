@@ -9,7 +9,7 @@ set -e
 POSTGRES_BASE=150
 POSTGREST_BASE=50
 INSFORGE_BASE=150
-DENO_BASE=60
+DENO_BASE=0
 VECTOR_BASE=50
 NODE_EXPORTER_BASE=20
 
@@ -61,7 +61,6 @@ echo "Scaling factor: ${SCALE_FACTOR}"
 # Calculate new memory limits (rounded to nearest MB)
 POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
 INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
-DENO_MEM=$(awk "BEGIN {printf \"%.0f\", $DENO_BASE * $SCALE_FACTOR}")
 # Fixed memory limits for postgrest and vector and node-exporter
 POSTGREST_MEM=$POSTGREST_BASE
 VECTOR_MEM=$VECTOR_BASE
@@ -75,7 +74,6 @@ echo "=== Calculated Memory Allocation ==="
 echo "postgres:      ${POSTGRES_MEM}MB (base: ${POSTGRES_BASE}MB)"
 echo "postgrest:     ${POSTGREST_MEM}MB (base: ${POSTGREST_BASE}MB)"
 echo "insforge:      ${INSFORGE_MEM}MB (base: ${INSFORGE_BASE}MB)"
-echo "deno:          ${DENO_MEM}MB (base: ${DENO_BASE}MB)"
 echo "vector:        ${VECTOR_MEM}MB (base: ${VECTOR_BASE}MB)"
 echo "node-exporter: ${NODE_EXPORTER_MEM}MB (base: ${NODE_EXPORTER_BASE}MB)"
 echo "---"

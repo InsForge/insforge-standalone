@@ -60,7 +60,7 @@ services:
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
       # Connection pool settings (CRITICAL for stability)
-      PGRST_DB_POOL: 50                    # Max connections in pool (default: 10)
+      PGRST_DB_POOL: 30                    # Max connections in pool (default: 10)
       PGRST_DB_POOL_TIMEOUT: 10            # Seconds to wait for connection (default: 10)
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: 10 # Max time to acquire connection
       # Server performance settings
@@ -148,55 +148,6 @@ services:
       - ANALYTICS_PROVIDER=${ANALYTICS_PROVIDER:-cloudwatch}
       - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP}
       - HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-}
-    networks:
-      - insforge-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  deno:
-    image: denoland/deno:alpine-2.0.6
-    container_name: insforge-deno
-    working_dir: /app
-    deploy:
-      resources:
-        limits:
-          memory: ${DENO_MEMORY:-130M}
-          cpus: '0.3'
-        reservations:
-          memory: 30M
-    depends_on:
-      - postgres
-      - postgrest
-    ports:
-      - "7133:7133"
-    environment:
-      - DENO_ENV=${DENO_ENV:-development}
-      - DENO_DIR=/deno-dir
-      - WORKER_TIMEOUT_MS=${WORKER_TIMEOUT_MS:-60000}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-please-change-in-production}
-      # PostgreSQL connection
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-insforge}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGREST_BASE_URL=http://postgrest:3000
-    volumes:
-      - ./functions:/app/functions
-      - deno_cache:/deno-dir
-    command: >
-      sh -c "
-        echo 'Downloading Deno dependencies...' &&
-        deno cache functions/server.ts &&
-        echo 'Starting Deno server...' &&
-        # Minimal permissions: net (server), env (config), read (worker template only)
-        deno run --allow-net --allow-env --allow-read=./functions/worker-template.js --watch functions/server.ts
-      "
-    restart: unless-stopped
     networks:
       - insforge-network
     logging:
