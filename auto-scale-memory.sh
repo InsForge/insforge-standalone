@@ -61,8 +61,8 @@ echo "Scaling factor: ${SCALE_FACTOR}"
 # Calculate new memory limits (rounded to nearest MB)
 POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
 INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
-# Fixed memory limits for postgrest and vector and node-exporter
-POSTGREST_MEM=$POSTGREST_BASE
+POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+# Fixed memory limits for vector and node-exporter
 VECTOR_MEM=$VECTOR_BASE
 NODE_EXPORTER_MEM=$NODE_EXPORTER_BASE
 
