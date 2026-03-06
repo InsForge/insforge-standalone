@@ -1,13 +1,14 @@
 
 services:
   postgres:
-    image: ghcr.io/insforge/postgres:v15.13.0
+    image: ghcr.io/insforge/postgres:v15.13.2
     container_name: insforge-postgres
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf
+    restart: unless-stopped
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c app.encryption_key='${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}'
     deploy:
       resources:
         limits:
-          memory: 100M
+          memory: ${POSTGRES_MEMORY:-150M}
           cpus: '0.5'
         reservations:
           memory: 30M
@@ -48,7 +49,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 50M
+          memory: ${POSTGREST_MEMORY:-50M}
           cpus: '0.3'
         reservations:
           memory: 20M
@@ -59,7 +60,7 @@ services:
       PGRST_DB_ANON_ROLE: anon
       PGRST_JWT_SECRET: ${JWT_SECRET}
       # Connection pool settings (CRITICAL for stability)
-      PGRST_DB_POOL: 50                    # Max connections in pool (default: 10)
+      PGRST_DB_POOL: 30                    # Max connections in pool (default: 10)
       PGRST_DB_POOL_TIMEOUT: 10            # Seconds to wait for connection (default: 10)
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: 10 # Max time to acquire connection
       # Server performance settings
@@ -82,13 +83,13 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.2.10}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v1.5.8}
     working_dir: /app
     restart: unless-stopped
     deploy:
       resources:
         limits:
-          memory: 150M
+          memory: ${INSFORGE_MEMORY:-150M}
           cpus: '0.5'
         reservations:
           memory: 50M
@@ -117,6 +118,9 @@ services:
       - CLOUD_API_HOST=${CLOUD_API_HOST}
       # Deno Runtime URL
       - DENO_RUNTIME_URL=http://deno:7133
+      # Deno Subhosting Configuration
+      - DENO_SUBHOSTING_TOKEN=${DENO_SUBHOSTING_TOKEN:-}
+      - DENO_SUBHOSTING_ORG_ID=${DENO_SUBHOSTING_ORG_ID:-}
       # OAuth Configuration
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
@@ -125,8 +129,12 @@ services:
       - GITHUB_CLIENT_SECRET=${GITHUB_CLIENT_SECRET:-}
       - GITHUB_REDIRECT_URI=${GITHUB_REDIRECT_URI:-http://localhost:7130/api/auth/v1/callback}
       # Storage Configuration
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-insforge-storage}
       - AWS_REGION=us-east-2
+      - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
+      - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
+      - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
       - AWS_INSTANCE_PROFILE_NAME=${AWS_INSTANCE_PROFILE_NAME}
       - AWS_CLOUDFRONT_URL=${AWS_CLOUDFRONT_URL:-}
       - AWS_CLOUDFRONT_KEY_PAIR_ID=${AWS_CLOUDFRONT_KEY_PAIR_ID}
@@ -148,54 +156,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  deno:
-    image: denoland/deno:alpine-2.0.6
-    container_name: insforge-deno
-    working_dir: /app
-    deploy:
-      resources:
-        limits:
-          memory: 100M
-          cpus: '0.3'
-        reservations:
-          memory: 30M
-    depends_on:
-      - postgres
-      - postgrest
-    ports:
-      - "7133:7133"
-    environment:
-      - DENO_ENV=${DENO_ENV:-development}
-      - DENO_DIR=/deno-dir
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-please-change-in-production}
-      # PostgreSQL connection
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - POSTGRES_DB=${POSTGRES_DB:-insforge}
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
-      - POSTGREST_BASE_URL=http://postgrest:3000
-    volumes:
-      - ./functions:/app/functions
-      - deno_cache:/deno-dir
-    command: >
-      sh -c "
-        echo 'Downloading Deno dependencies...' &&
-        deno cache functions/server.ts &&
-        echo 'Starting Deno server...' &&
-        # Minimal permissions: net (server), env (config), read (worker template only)
-        deno run --allow-net --allow-env --allow-read=./functions/worker-template.js --watch functions/server.ts
-      "
-    restart: unless-stopped
-    networks:
-      - insforge-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   vector:
     container_name: insforge-vector
     image: timberio/vector:0.28.1-alpine
@@ -203,7 +163,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 50M
+          memory: ${VECTOR_MEMORY:-50M}
           cpus: '0.2'
         reservations:
           memory: 20M
@@ -250,7 +210,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 20M
+          memory: ${NODE_EXPORTER_MEMORY:-20M}
           cpus: '0.1'
         reservations:
           memory: 10M

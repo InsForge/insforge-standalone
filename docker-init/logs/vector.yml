@@ -158,7 +158,7 @@ transforms:
           .metadata.level = "LOG"
       }
 
-sinks:
+sinks:   
   # CloudWatch structured sinks (Vector -> CloudWatch). Use distinct stream names to avoid conflicts
   cw_insforge:
     type: aws_cloudwatch_logs
