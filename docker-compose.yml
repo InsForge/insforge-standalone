@@ -210,7 +210,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${NODE_EXPORTER_MEMORY:-20M}
+          memory: ${NODE_EXPORTER_MEMORY:-30M}
           cpus: '0.1'
         reservations:
           memory: 10M
