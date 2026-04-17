@@ -64,6 +64,7 @@ INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
 POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
 # Fixed memory limits for vector and node-exporter
 VECTOR_MEM=$VECTOR_BASE
+DENO_MEM=$DENO_BASE
 NODE_EXPORTER_MEM=$NODE_EXPORTER_BASE
 
 # Verify total doesn't exceed usable memory
