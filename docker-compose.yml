@@ -32,13 +32,15 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
-    # Add logging configuration
     logging:
-      driver: "json-file"
+      driver: awslogs
       options:
-        max-size: "10m"
-        max-file: "3"
-    # Ensure proper shutdown
+        awslogs-region: us-east-2
+        awslogs-group: /insforge/${PROJECT_ID}
+        awslogs-stream: ${HOSTNAME_OVERRIDE}-postgres-vector
+        awslogs-create-group: "true"
+        mode: non-blocking
+        max-buffer-size: 4m
     stop_grace_period: 30s
     stop_signal: SIGINT
 
@@ -76,10 +78,14 @@ services:
     networks:
       - insforge-network
     logging:
-      driver: "json-file"
+      driver: awslogs
       options:
-        max-size: "10m"
-        max-file: "3"
+        awslogs-region: us-east-2
+        awslogs-group: /insforge/${PROJECT_ID}
+        awslogs-stream: ${HOSTNAME_OVERRIDE}-postgrest-vector
+        awslogs-create-group: "true"
+        mode: non-blocking
+        max-buffer-size: 4m
 
   insforge:
     container_name: insforge
@@ -151,56 +157,14 @@ services:
     networks:
       - insforge-network
     logging:
-      driver: "json-file"
+      driver: awslogs
       options:
-        max-size: "10m"
-        max-file: "3"
-
-  vector:
-    container_name: insforge-vector
-    image: timberio/vector:0.28.1-alpine
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: ${VECTOR_MEMORY:-50M}
-          cpus: '0.2'
-        reservations:
-          memory: 20M
-    volumes:
-      - ./docker-init/logs/vector.yml:/etc/vector/vector.yml:ro,z
-      - ${DOCKER_SOCKET_LOCATION}:/var/run/docker.sock:ro,z
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://vector:7135/health"
-        ]
-      timeout: 5s
-      interval: 5s
-      retries: 3
-    environment:
-      AWS_REGION: us-east-2
-      PROJECT_ID: ${PROJECT_ID:-}
-      HOSTNAME_OVERRIDE: ${HOSTNAME_OVERRIDE:-}
-    command:
-      [
-        "--config",
-        "/etc/vector/vector.yml"
-      ]
-    security_opt:
-      - "label=disable"
-    networks:
-      - insforge-network
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+        awslogs-region: us-east-2
+        awslogs-group: /insforge/${PROJECT_ID}
+        awslogs-stream: ${HOSTNAME_OVERRIDE}-insforge-vector
+        awslogs-create-group: "true"
+        mode: non-blocking
+        max-buffer-size: 4m
 
   # host metrics collection
   node-exporter:
@@ -210,10 +174,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: ${NODE_EXPORTER_MEMORY:-30M}
+          memory: ${NODE_EXPORTER_MEMORY:-15M}
           cpus: '0.1'
         reservations:
-          memory: 10M
+          memory: 8M
     network_mode: host  # use host network
     pid: host
     ports:
