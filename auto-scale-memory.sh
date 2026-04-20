@@ -35,8 +35,8 @@ AVAILABLE_MEM=$TOTAL_MEM
 RESERVED_MEM=30
 USABLE_MEM=$(( AVAILABLE_MEM - RESERVED_MEM ))
 
-if [ "$USABLE_MEM" -lt 300 ]; then
-    echo "ERROR: Not enough memory available. Need at least 330MB (300MB usable + 30MB reserved)"
+if [ "$USABLE_MEM" -lt "$TOTAL_BASE" ]; then
+    echo "ERROR: Not enough memory available. Need at least $((TOTAL_BASE + RESERVED_MEM))MB (${TOTAL_BASE}MB usable + ${RESERVED_MEM}MB reserved)"
     echo "Available: ${AVAILABLE_MEM}MB, Usable after reservation: ${USABLE_MEM}MB"
     exit 1
 fi
