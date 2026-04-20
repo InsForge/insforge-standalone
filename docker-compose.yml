@@ -166,35 +166,6 @@ services:
         mode: non-blocking
         max-buffer-size: 4m
 
-  # host metrics collection
-  node-exporter:
-    image: prom/node-exporter:v1.7.0
-    container_name: node-exporter
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: ${NODE_EXPORTER_MEMORY:-15M}
-          cpus: '0.1'
-        reservations:
-          memory: 8M
-    network_mode: host  # use host network
-    pid: host
-    ports:
-      - "9100:9100"
-    command:
-      - '--path.procfs=/host/proc'
-      - '--path.sysfs=/host/sys'
-      - '--path.rootfs=/rootfs'
-      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    volumes:
-      - /proc:/host/proc:ro
-      - /sys:/host/sys:ro
-      - /:/rootfs:ro
-    labels:
-      project_id: "${PROJECT_ID}"
-      environment: "production"
-
 volumes:
   postgres-data:
     driver: local

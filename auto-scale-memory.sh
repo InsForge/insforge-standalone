@@ -9,12 +9,9 @@ set -e
 POSTGRES_BASE=150
 POSTGREST_BASE=50
 INSFORGE_BASE=150
-DENO_BASE=0
-VECTOR_BASE=0
-NODE_EXPORTER_BASE=15
 
 # Total base memory
-TOTAL_BASE=$(( POSTGRES_BASE + POSTGREST_BASE + INSFORGE_BASE + DENO_BASE + VECTOR_BASE + NODE_EXPORTER_BASE ))
+TOTAL_BASE=$(( POSTGRES_BASE + POSTGREST_BASE + INSFORGE_BASE ))
 echo "Base total memory: ${TOTAL_BASE}MB"
 
 # Get total system memory (in MB)
@@ -62,21 +59,14 @@ echo "Scaling factor: ${SCALE_FACTOR}"
 POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
 INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
 POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
-# Fixed memory limits for vector and node-exporter
-VECTOR_MEM=$VECTOR_BASE
-DENO_MEM=$DENO_BASE
-NODE_EXPORTER_MEM=$NODE_EXPORTER_BASE
-
 # Verify total doesn't exceed usable memory
-TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM + DENO_MEM + VECTOR_MEM + NODE_EXPORTER_MEM ))
+TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM ))
 
 echo ""
 echo "=== Calculated Memory Allocation ==="
 echo "postgres:      ${POSTGRES_MEM}MB (base: ${POSTGRES_BASE}MB)"
 echo "postgrest:     ${POSTGREST_MEM}MB (base: ${POSTGREST_BASE}MB)"
 echo "insforge:      ${INSFORGE_MEM}MB (base: ${INSFORGE_BASE}MB)"
-echo "vector:        ${VECTOR_MEM}MB (base: ${VECTOR_BASE}MB)"
-echo "node-exporter: ${NODE_EXPORTER_MEM}MB (base: ${NODE_EXPORTER_BASE}MB)"
 echo "---"
 echo "Total allocated: ${TOTAL_ALLOCATED}MB / ${USABLE_MEM}MB usable"
 echo ""
@@ -88,7 +78,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^CWAGENT_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
@@ -101,9 +91,6 @@ cat >> "$ENV_FILE" << EOF
 POSTGRES_MEMORY=${POSTGRES_MEM}M
 POSTGREST_MEMORY=${POSTGREST_MEM}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
-DENO_MEMORY=${DENO_MEM}M
-VECTOR_MEMORY=${VECTOR_MEM}M
-NODE_EXPORTER_MEMORY=${NODE_EXPORTER_MEM}M
 EOF
 
 echo "Memory configuration updated in ${ENV_FILE}"
