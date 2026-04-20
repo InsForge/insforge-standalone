@@ -78,7 +78,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^CWAGENT_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
