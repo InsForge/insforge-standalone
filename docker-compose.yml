@@ -169,8 +169,6 @@ services:
 volumes:
   postgres-data:
     driver: local
-  deno_cache:
-    driver: local
 
 networks:
   insforge-network:
