@@ -35,7 +35,7 @@ services:
     logging:
       driver: awslogs
       options:
-        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-region: us-east-2
         awslogs-group: /insforge/${PROJECT_ID}
         awslogs-stream: ${HOSTNAME_OVERRIDE}-postgres-vector
         awslogs-create-group: "true"
@@ -80,7 +80,7 @@ services:
     logging:
       driver: awslogs
       options:
-        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-region: us-east-2
         awslogs-group: /insforge/${PROJECT_ID}
         awslogs-stream: ${HOSTNAME_OVERRIDE}-postgrest-vector
         awslogs-create-group: "true"
@@ -159,7 +159,7 @@ services:
     logging:
       driver: awslogs
       options:
-        awslogs-region: ${AWS_REGION:-us-east-2}
+        awslogs-region: us-east-2
         awslogs-group: /insforge/${PROJECT_ID}
         awslogs-stream: ${HOSTNAME_OVERRIDE}-insforge-vector
         awslogs-create-group: "true"
