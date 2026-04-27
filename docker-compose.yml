@@ -29,7 +29,7 @@ services:
     healthcheck:
       test:
         - "CMD-SHELL"
-        - "pg_isready -U postgres -d insforge -h 127.0.0.1 -p 5432 && psql -U postgres -d insforge -c 'SELECT 1' >/dev/null 2>&1"
+        - "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-insforge} -h 127.0.0.1 -p 5432 && PGPASSWORD=${POSTGRES_PASSWORD:-postgres} psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-insforge} -c 'SELECT 1' >/dev/null 2>&1"
       interval: 10s
       timeout: 10s
       retries: 30
