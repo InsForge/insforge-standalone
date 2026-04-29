@@ -27,11 +27,11 @@ services:
     networks:
       - insforge-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-insforge} -h 127.0.0.1 -p 5432"]
       interval: 10s
       timeout: 10s
-      retries: 10
-      start_period: 30s
+      retries: 30
+      start_period: 300s
     logging:
       driver: awslogs
       options:
