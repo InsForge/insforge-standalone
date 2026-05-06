@@ -89,7 +89,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v2.0.9}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v2.1.0}
     working_dir: /app
     restart: unless-stopped
     deploy:
