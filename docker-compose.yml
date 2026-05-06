@@ -149,6 +149,7 @@ services:
       - DEPLOYMENT_ID=${DEPLOYMENT_ID:-}
       - PROJECT_ID=${PROJECT_ID:-}
       - APP_KEY=${APP_KEY:-}
+      - PARENT_APP_KEY=${PARENT_APP_KEY:-}
       - ACCESS_API_KEY=${ACCESS_API_KEY:-}
       # Analytics (CloudWatch)
       - ANALYTICS_PROVIDER=${ANALYTICS_PROVIDER:-cloudwatch}
