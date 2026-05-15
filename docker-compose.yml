@@ -48,6 +48,10 @@ services:
     image: postgrest/postgrest:v12.2.12
     container_name: insforge-postgrest
     restart: unless-stopped
+    # Cap GHC heap so postgrest releases memory back to the OS instead of
+    # idling near the cgroup limit. Heap target is set ~20MB below the
+    # cgroup limit by auto-scale-memory.sh (default suits the 50M base).
+    command: postgrest +RTS -M${POSTGREST_RTS_HEAP:-30M} -A2m -H24m -N1 -RTS
     deploy:
       resources:
         limits:
