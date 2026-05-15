@@ -67,6 +67,8 @@ services:
       PGRST_DB_POOL_ACQUISITION_TIMEOUT: 10 # Max time to acquire connection
       # Server performance settings
       PGRST_MAX_ROWS: 1000                 # Limit result set size
+      # Quieter logs reduce log buffer memory and CloudWatch volume; default is "info"
+      PGRST_LOG_LEVEL: warn
       # Enable schema reloading via NOTIFY
       PGRST_DB_CHANNEL_ENABLED: true
       PGRST_DB_CHANNEL: pgrst
