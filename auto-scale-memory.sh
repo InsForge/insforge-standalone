@@ -59,13 +59,18 @@ echo "Scaling factor: ${SCALE_FACTOR}"
 POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
 INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
 POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+# GHC heap cap for postgrest. Leave ~20MB for non-heap (binary, RTS internals,
+# thread stacks); floor at 20M to avoid pathological values on tiny instances.
+POSTGREST_RTS_HEAP=$(( POSTGREST_MEM - 20 ))
+if [ "$POSTGREST_RTS_HEAP" -lt 20 ]; then POSTGREST_RTS_HEAP=20; fi
+
 # Verify total doesn't exceed usable memory
 TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM ))
 
 echo ""
 echo "=== Calculated Memory Allocation ==="
 echo "postgres:      ${POSTGRES_MEM}MB (base: ${POSTGRES_BASE}MB)"
-echo "postgrest:     ${POSTGREST_MEM}MB (base: ${POSTGREST_BASE}MB)"
+echo "postgrest:     ${POSTGREST_MEM}MB (base: ${POSTGREST_BASE}MB, GHC heap cap: ${POSTGREST_RTS_HEAP}M)"
 echo "insforge:      ${INSFORGE_MEM}MB (base: ${INSFORGE_BASE}MB)"
 echo "---"
 echo "Total allocated: ${TOTAL_ALLOCATED}MB / ${USABLE_MEM}MB usable"
@@ -78,7 +83,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
@@ -90,6 +95,7 @@ cat >> "$ENV_FILE" << EOF
 # Scaling factor: ${SCALE_FACTOR}
 POSTGRES_MEMORY=${POSTGRES_MEM}M
 POSTGREST_MEMORY=${POSTGREST_MEM}M
+POSTGREST_RTS_HEAP=${POSTGREST_RTS_HEAP}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
 EOF
 
