@@ -93,7 +93,7 @@ services:
 
   insforge:
     container_name: insforge
-    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v2.2.1-deno}
+    image: ghcr.io/insforge/insforge-oss:${INSFORGE_OSS_VER:-v2.2.1-deno2}
     working_dir: /app
     restart: unless-stopped
     deploy:
@@ -126,8 +126,6 @@ services:
       - POSTGREST_BASE_URL=http://postgrest:3000
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
       - CLOUD_API_HOST=${CLOUD_API_HOST}
-      # Deno Runtime URL
-      - DENO_RUNTIME_URL=http://deno:7133
       # Deno Subhosting Configuration
       - DENO_SUBHOSTING_TOKEN=${DENO_SUBHOSTING_TOKEN:-}
       - DENO_SUBHOSTING_ORG_ID=${DENO_SUBHOSTING_ORG_ID:-}
