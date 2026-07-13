@@ -64,6 +64,22 @@ POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
 POSTGREST_RTS_HEAP=$(( POSTGREST_MEM - 20 ))
 if [ "$POSTGREST_RTS_HEAP" -lt 20 ]; then POSTGREST_RTS_HEAP=20; fi
 
+# --- Scale PostgREST pool + Postgres max_connections with instance RAM ----------
+# Each Postgres backend costs ~5-10MB, so these are BOUNDED per RAM tier (NOT scaled
+# linearly with the memory factor, which would OOM Postgres on large instances).
+# PGRST_DB_POOL is kept at ~55-60% of max_connections, leaving headroom for the app,
+# admin, and direct DB connections. Fixes both nano over-pooling (OOM risk) and
+# medium/xl under-pooling (PGRST003 "timed out acquiring connection from pool").
+if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_MAX_CONNECTIONS=700; PGRST_DB_POOL=450   # 2xl ~32G
+elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_MAX_CONNECTIONS=400; PGRST_DB_POOL=250   # xl ~16G
+elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_MAX_CONNECTIONS=250; PGRST_DB_POOL=150   # large ~8G
+elif [ "$TOTAL_MEM" -ge 3500  ]; then PG_MAX_CONNECTIONS=150; PGRST_DB_POOL=90    # medium ~4G
+elif [ "$TOTAL_MEM" -ge 1800  ]; then PG_MAX_CONNECTIONS=80;  PGRST_DB_POOL=45    # small ~2G
+elif [ "$TOTAL_MEM" -ge 900   ]; then PG_MAX_CONNECTIONS=50;  PGRST_DB_POOL=25    # micro ~1G
+else                                  PG_MAX_CONNECTIONS=30;  PGRST_DB_POOL=15    # nano ~0.5G
+fi
+echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS} (RAM ${TOTAL_MEM}MB)"
+
 # Verify total doesn't exceed usable memory
 TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM ))
 
@@ -83,7 +99,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
@@ -97,6 +113,8 @@ POSTGRES_MEMORY=${POSTGRES_MEM}M
 POSTGREST_MEMORY=${POSTGREST_MEM}M
 POSTGREST_RTS_HEAP=${POSTGREST_RTS_HEAP}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
+PGRST_DB_POOL=${PGRST_DB_POOL}
+PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}
 EOF
 
 echo "Memory configuration updated in ${ENV_FILE}"
