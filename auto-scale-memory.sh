@@ -80,6 +80,23 @@ else                                  PG_MAX_CONNECTIONS=30;  PGRST_DB_POOL=15  
 fi
 echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS} (RAM ${TOTAL_MEM}MB)"
 
+# --- Scale Postgres memory settings with instance RAM ---------------------------
+# postgresql.conf ships nano-safe values (shared_buffers=32MB etc.); without this
+# block every tier runs them, so a large instance gets nano-tuned Postgres. Tiers
+# mirror the connection scaling above. shared_buffers stays ~15-25% of the postgres
+# CONTAINER limit (POSTGRES_MEMORY, ~35-40% of host RAM), not of host RAM, since the
+# box is shared with the API. work_mem is per sort/hash node, so it is bounded per
+# tier against worst-case work_mem * max_connections, not scaled linearly.
+if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_SHARED_BUFFERS=2GB;   PG_EFFECTIVE_CACHE_SIZE=8GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=1GB    # 2xl ~32G
+elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_SHARED_BUFFERS=1GB;   PG_EFFECTIVE_CACHE_SIZE=4GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=512MB  # xl ~16G
+elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_SHARED_BUFFERS=512MB; PG_EFFECTIVE_CACHE_SIZE=2GB;   PG_WORK_MEM=8MB;  PG_MAINTENANCE_WORK_MEM=256MB  # large ~8G
+elif [ "$TOTAL_MEM" -ge 3500  ]; then PG_SHARED_BUFFERS=256MB; PG_EFFECTIVE_CACHE_SIZE=1GB;   PG_WORK_MEM=8MB;  PG_MAINTENANCE_WORK_MEM=128MB  # medium ~4G
+elif [ "$TOTAL_MEM" -ge 1800  ]; then PG_SHARED_BUFFERS=128MB; PG_EFFECTIVE_CACHE_SIZE=512MB; PG_WORK_MEM=4MB;  PG_MAINTENANCE_WORK_MEM=64MB   # small ~2G
+elif [ "$TOTAL_MEM" -ge 900   ]; then PG_SHARED_BUFFERS=64MB;  PG_EFFECTIVE_CACHE_SIZE=256MB; PG_WORK_MEM=4MB;  PG_MAINTENANCE_WORK_MEM=32MB   # micro ~1G
+else                                  PG_SHARED_BUFFERS=32MB;  PG_EFFECTIVE_CACHE_SIZE=128MB; PG_WORK_MEM=2MB;  PG_MAINTENANCE_WORK_MEM=16MB   # nano ~0.5G (= conf defaults)
+fi
+echo "Postgres memory scaling: shared_buffers=${PG_SHARED_BUFFERS}, effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE}, work_mem=${PG_WORK_MEM}, maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM}"
+
 # Verify total doesn't exceed usable memory
 TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM ))
 
@@ -99,7 +116,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^PG_SHARED_BUFFERS=/d; /^PG_EFFECTIVE_CACHE_SIZE=/d; /^PG_WORK_MEM=/d; /^PG_MAINTENANCE_WORK_MEM=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
@@ -115,6 +132,10 @@ POSTGREST_RTS_HEAP=${POSTGREST_RTS_HEAP}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
 PGRST_DB_POOL=${PGRST_DB_POOL}
 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}
+PG_SHARED_BUFFERS=${PG_SHARED_BUFFERS}
+PG_EFFECTIVE_CACHE_SIZE=${PG_EFFECTIVE_CACHE_SIZE}
+PG_WORK_MEM=${PG_WORK_MEM}
+PG_MAINTENANCE_WORK_MEM=${PG_MAINTENANCE_WORK_MEM}
 EOF
 
 echo "Memory configuration updated in ${ENV_FILE}"
