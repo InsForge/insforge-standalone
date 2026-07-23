@@ -55,10 +55,30 @@ fi
 
 echo "Scaling factor: ${SCALE_FACTOR}"
 
-# Calculate new memory limits (rounded to nearest MB)
-POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
-INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
-POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+# Calculate new memory limits (rounded to nearest MB).
+#
+# Node (insforge) and PostgREST have ~fixed footprints — they do NOT use more
+# RAM on a bigger box (measured: Node <100MB, PostgREST ~3MB at idle). Only
+# Postgres benefits from more memory as the instance grows. So we cap those two
+# at fixed ceilings and give Postgres the remainder, instead of scaling all
+# three linearly. Linear scaling starved Postgres to ~43% of a large box: under
+# memory-heavy load it pinned that cap and thrashed on swap while multiple GB of
+# host RAM sat idle, and the Node container held GBs it never touched.
+#
+# The min() with the original linear share keeps small instances (nano/micro)
+# unchanged — there the linear value is below the cap, so the cap never binds
+# and behavior matches the load-tested small-tier config.
+INSFORGE_CAP=512
+POSTGREST_CAP=256
+INSFORGE_LINEAR=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
+POSTGREST_LINEAR=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+INSFORGE_MEM=$(( INSFORGE_LINEAR < INSFORGE_CAP ? INSFORGE_LINEAR : INSFORGE_CAP ))
+POSTGREST_MEM=$(( POSTGREST_LINEAR < POSTGREST_CAP ? POSTGREST_LINEAR : POSTGREST_CAP ))
+# Postgres gets everything left after the (capped) app + proxy — it's the
+# workload that actually uses the memory. Never below its original linear share.
+POSTGRES_LINEAR=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
+POSTGRES_MEM=$(( USABLE_MEM - INSFORGE_MEM - POSTGREST_MEM ))
+if [ "$POSTGRES_MEM" -lt "$POSTGRES_LINEAR" ]; then POSTGRES_MEM=$POSTGRES_LINEAR; fi
 # GHC heap cap for postgrest. Leave ~20MB for non-heap (binary, RTS internals,
 # thread stacks); floor at 20M to avoid pathological values on tiny instances.
 POSTGREST_RTS_HEAP=$(( POSTGREST_MEM - 20 ))
