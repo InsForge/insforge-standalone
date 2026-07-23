@@ -103,10 +103,12 @@ echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${P
 # --- Scale Postgres memory settings with instance RAM ---------------------------
 # postgresql.conf ships nano-safe values (shared_buffers=32MB etc.); without this
 # block every tier runs them, so a large instance gets nano-tuned Postgres. Tiers
-# mirror the connection scaling above. shared_buffers stays ~15-25% of the postgres
-# CONTAINER limit (POSTGRES_MEMORY, ~35-40% of host RAM), not of host RAM, since the
-# box is shared with the API. work_mem is per sort/hash node, so it is bounded per
-# tier against worst-case work_mem * max_connections, not scaled linearly.
+# mirror the connection scaling above. After the container-limit rebalance below,
+# Postgres gets the bulk of the box (~62-98% of usable RAM on small->2xl), so
+# shared_buffers here is deliberately conservative (~7-15% of the PG container) —
+# there's headroom to raise it, but that's a follow-up load test, not a guess.
+# work_mem is per sort/hash node, so it's bounded per tier rather than scaled
+# linearly (worst-case work_mem * max_connections must stay within the container).
 if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_SHARED_BUFFERS=2GB;   PG_EFFECTIVE_CACHE_SIZE=8GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=1GB    # 2xl ~32G
 elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_SHARED_BUFFERS=1GB;   PG_EFFECTIVE_CACHE_SIZE=4GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=512MB  # xl ~16G
 elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_SHARED_BUFFERS=512MB; PG_EFFECTIVE_CACHE_SIZE=2GB;   PG_WORK_MEM=8MB;  PG_MAINTENANCE_WORK_MEM=256MB  # large ~8G
