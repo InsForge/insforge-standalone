@@ -55,10 +55,30 @@ fi
 
 echo "Scaling factor: ${SCALE_FACTOR}"
 
-# Calculate new memory limits (rounded to nearest MB)
-POSTGRES_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
-INSFORGE_MEM=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
-POSTGREST_MEM=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+# Calculate new memory limits (rounded to nearest MB).
+#
+# Node (insforge) and PostgREST have ~fixed footprints — they do NOT use more
+# RAM on a bigger box (measured: Node <100MB, PostgREST ~3MB at idle). Only
+# Postgres benefits from more memory as the instance grows. So we cap those two
+# at fixed ceilings and give Postgres the remainder, instead of scaling all
+# three linearly. Linear scaling starved Postgres to ~43% of a large box: under
+# memory-heavy load it pinned that cap and thrashed on swap while multiple GB of
+# host RAM sat idle, and the Node container held GBs it never touched.
+#
+# The min() with the original linear share keeps small instances (nano/micro)
+# unchanged — there the linear value is below the cap, so the cap never binds
+# and behavior matches the load-tested small-tier config.
+INSFORGE_CAP=512
+POSTGREST_CAP=256
+INSFORGE_LINEAR=$(awk "BEGIN {printf \"%.0f\", $INSFORGE_BASE * $SCALE_FACTOR}")
+POSTGREST_LINEAR=$(awk "BEGIN {printf \"%.0f\", $POSTGREST_BASE * $SCALE_FACTOR}")
+INSFORGE_MEM=$(( INSFORGE_LINEAR < INSFORGE_CAP ? INSFORGE_LINEAR : INSFORGE_CAP ))
+POSTGREST_MEM=$(( POSTGREST_LINEAR < POSTGREST_CAP ? POSTGREST_LINEAR : POSTGREST_CAP ))
+# Postgres gets everything left after the (capped) app + proxy — it's the
+# workload that actually uses the memory. Never below its original linear share.
+POSTGRES_LINEAR=$(awk "BEGIN {printf \"%.0f\", $POSTGRES_BASE * $SCALE_FACTOR}")
+POSTGRES_MEM=$(( USABLE_MEM - INSFORGE_MEM - POSTGREST_MEM ))
+if [ "$POSTGRES_MEM" -lt "$POSTGRES_LINEAR" ]; then POSTGRES_MEM=$POSTGRES_LINEAR; fi
 # GHC heap cap for postgrest. Leave ~20MB for non-heap (binary, RTS internals,
 # thread stacks); floor at 20M to avoid pathological values on tiny instances.
 POSTGREST_RTS_HEAP=$(( POSTGREST_MEM - 20 ))
@@ -80,6 +100,25 @@ else                                  PG_MAX_CONNECTIONS=30;  PGRST_DB_POOL=15  
 fi
 echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS} (RAM ${TOTAL_MEM}MB)"
 
+# --- Scale Postgres memory settings with instance RAM ---------------------------
+# postgresql.conf ships nano-safe values (shared_buffers=32MB etc.); without this
+# block every tier runs them, so a large instance gets nano-tuned Postgres. Tiers
+# mirror the connection scaling above. After the container-limit rebalance below,
+# Postgres gets the bulk of the box (~62-98% of usable RAM on small->2xl), so
+# shared_buffers here is deliberately conservative (~7-15% of the PG container) —
+# there's headroom to raise it, but that's a follow-up load test, not a guess.
+# work_mem is per sort/hash node, so it's bounded per tier rather than scaled
+# linearly (worst-case work_mem * max_connections must stay within the container).
+if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_SHARED_BUFFERS=2GB;   PG_EFFECTIVE_CACHE_SIZE=8GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=1GB    # 2xl ~32G
+elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_SHARED_BUFFERS=1GB;   PG_EFFECTIVE_CACHE_SIZE=4GB;   PG_WORK_MEM=16MB; PG_MAINTENANCE_WORK_MEM=512MB  # xl ~16G
+elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_SHARED_BUFFERS=512MB; PG_EFFECTIVE_CACHE_SIZE=2GB;   PG_WORK_MEM=8MB;  PG_MAINTENANCE_WORK_MEM=256MB  # large ~8G
+elif [ "$TOTAL_MEM" -ge 3500  ]; then PG_SHARED_BUFFERS=256MB; PG_EFFECTIVE_CACHE_SIZE=1GB;   PG_WORK_MEM=8MB;  PG_MAINTENANCE_WORK_MEM=128MB  # medium ~4G
+elif [ "$TOTAL_MEM" -ge 1800  ]; then PG_SHARED_BUFFERS=128MB; PG_EFFECTIVE_CACHE_SIZE=512MB; PG_WORK_MEM=4MB;  PG_MAINTENANCE_WORK_MEM=64MB   # small ~2G
+elif [ "$TOTAL_MEM" -ge 900   ]; then PG_SHARED_BUFFERS=64MB;  PG_EFFECTIVE_CACHE_SIZE=256MB; PG_WORK_MEM=4MB;  PG_MAINTENANCE_WORK_MEM=32MB   # micro ~1G
+else                                  PG_SHARED_BUFFERS=32MB;  PG_EFFECTIVE_CACHE_SIZE=128MB; PG_WORK_MEM=2MB;  PG_MAINTENANCE_WORK_MEM=16MB   # nano ~0.5G (= conf defaults)
+fi
+echo "Postgres memory scaling: shared_buffers=${PG_SHARED_BUFFERS}, effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE}, work_mem=${PG_WORK_MEM}, maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM}"
+
 # Verify total doesn't exceed usable memory
 TOTAL_ALLOCATED=$(( POSTGRES_MEM + POSTGREST_MEM + INSFORGE_MEM ))
 
@@ -99,7 +138,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^PG_SHARED_BUFFERS=/d; /^PG_EFFECTIVE_CACHE_SIZE=/d; /^PG_WORK_MEM=/d; /^PG_MAINTENANCE_WORK_MEM=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Total system memory:/d; /^# Usable memory:/d; /^# Scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new memory settings
@@ -115,6 +154,10 @@ POSTGREST_RTS_HEAP=${POSTGREST_RTS_HEAP}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
 PGRST_DB_POOL=${PGRST_DB_POOL}
 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}
+PG_SHARED_BUFFERS=${PG_SHARED_BUFFERS}
+PG_EFFECTIVE_CACHE_SIZE=${PG_EFFECTIVE_CACHE_SIZE}
+PG_WORK_MEM=${PG_WORK_MEM}
+PG_MAINTENANCE_WORK_MEM=${PG_MAINTENANCE_WORK_MEM}
 EOF
 
 echo "Memory configuration updated in ${ENV_FILE}"

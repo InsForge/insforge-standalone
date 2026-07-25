@@ -4,7 +4,7 @@ services:
     image: ghcr.io/insforge/postgres:v15.13.4
     container_name: insforge-postgres
     restart: unless-stopped
-    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=${PG_MAX_CONNECTIONS:-100} -c app.encryption_key='${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}'
+    command: postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=${PG_MAX_CONNECTIONS:-100} -c shared_buffers=${PG_SHARED_BUFFERS:-32MB} -c effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-128MB} -c work_mem=${PG_WORK_MEM:-2MB} -c maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-16MB} -c app.encryption_key='${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}'
     deploy:
       resources:
         limits:
