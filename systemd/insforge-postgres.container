@@ -19,7 +19,14 @@ HealthInterval=10s
 HealthRetries=30
 HealthStartPeriod=60s
 PodmanArgs=--network-alias=postgres
-Exec=postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=30
+# max_connections and app.encryption_key are stamped here by
+# insforge-render-env from .env on every start -- they cannot be read from the
+# EnvironmentFile because they are server start parameters, and they cannot be
+# constants because auto-scale-memory.sh sizes max_connections per instance
+# tier. app.encryption_key is what schedules.encrypt_headers/decrypt_headers
+# read via current_setting(); without it, scheduled functions with headers
+# raise. Compose passed both on the command line for the same reasons.
+Exec=postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=100
 
 [Service]
 Restart=always

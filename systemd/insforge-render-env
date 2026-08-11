@@ -42,8 +42,13 @@ EOF
 # Single-line vars only. Multi-line values (the CloudFront PEM) cannot be
 # expressed in an env-file at all -- neither systemd's EnvironmentFile= nor
 # podman's --env-file parse them -- so they go through the drop-in below.
-grep -vE '^(AWS_CLOUDFRONT_PRIVATE_KEY=|-----|[A-Za-z0-9+/]{40,}=*$|#|$)' "$ENV_FILE" \
-  | grep '=' > "$OUT/insforge.env"
+# Allowlist real env lines by shape rather than blocklisting PEM bodies: a
+# wrapped base64 tail shorter than 40 chars would slip past a blocklist and
+# land in the env file as a junk variable.
+grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE" \
+  | grep -v '^AWS_CLOUDFRONT_PRIVATE_KEY=' > "$OUT/insforge.env"
+# POSTGREST_MAX_SOCKETS was a compose literal and is absent from .env; the
+# app's PostgREST connection ceiling has to track the pool auto-scale sized.
 cat >> "$OUT/insforge.env" <<EOF
 POSTGRES_HOST=postgres
 POSTGREST_BASE_URL=http://postgrest:3000
@@ -56,6 +61,7 @@ MAX_JSON_BODY_SIZE=100mb
 MAX_URLENCODED_BODY_SIZE=10mb
 API_BASE_URL=${VITE_API_BASE_URL:-}
 AWS_REGION=${AWS_REGION:-us-east-2}
+POSTGREST_MAX_SOCKETS=${PGRST_DB_POOL:-30}
 EOF
 
 # --- multi-line secrets ---------------------------------------------------
@@ -75,24 +81,46 @@ with open(out, "w") as f:
 PY
 
 # --- resource limits ------------------------------------------------------
-# auto-scale-memory.sh sizes these per instance type and writes them to .env.
-# Under compose they were `deploy.resources.limits`; here they become cgroup
+# auto-scale-memory.sh sizes memory per instance type and writes it to .env.
+# Under compose these were `deploy.resources.limits`; here they become cgroup
 # settings on the generated units, which additionally gives us MemoryHigh --
 # throttle-before-OOM, something compose could not express.
+#
+# Deliberately no CPUQuota. auto-scale-memory.sh removed CPU limits on purpose
+# (see its header: a 0.3-cpu cap on postgrest stalled requests while the host
+# sat at load 0.01) and it strips *_CPUS from .env on every run, so any default
+# here would silently reinstate exactly the cap that was removed. Under
+# contention the kernel's equal cpu.weight arbitrates, as compose now relies on.
 mem_high() { echo "$(( ${1%M} * 90 / 100 ))M"; }
-cpu_pct()  { awk "BEGIN {printf \"%d\", $1 * 100}"; }
-write_limits() {  # unit, memory, cpus
+write_limits() {  # unit, memory
   mkdir -p "/etc/systemd/system/$1.service.d"
   cat > "/etc/systemd/system/$1.service.d/limits.conf" <<LIM
 [Service]
 MemoryMax=$2
 MemoryHigh=$(mem_high "$2")
-CPUQuota=$(cpu_pct "$3")%
 LIM
 }
-write_limits insforge-postgres  "${POSTGRES_MEMORY:-150M}"  "${POSTGRES_CPUS:-0.5}"
-write_limits insforge-postgrest "${POSTGREST_MEMORY:-50M}"  "${POSTGREST_CPUS:-0.3}"
-write_limits insforge           "${INSFORGE_MEMORY:-150M}"  "${INSFORGE_CPUS:-0.5}"
+write_limits insforge-postgres  "${POSTGRES_MEMORY:-150M}"
+write_limits insforge-postgrest "${POSTGREST_MEMORY:-50M}"
+write_limits insforge           "${INSFORGE_MEMORY:-150M}"
+
+# --- per-tier values that must live in the unit Exec lines -----------------
+# max_connections, app.encryption_key and the GHC heap cap are server start
+# parameters, so they cannot come from an EnvironmentFile. Stamp them from .env
+# on every render so they track auto-scale-memory.sh instead of drifting as
+# constants (compose passed them on the command line for the same reason).
+QUADLET_DIR=${QUADLET_DIR:-/etc/containers/systemd}
+PG_UNIT="$QUADLET_DIR/insforge-postgres.container"
+PGRST_UNIT="$QUADLET_DIR/insforge-postgrest.container"
+PG_ENC_KEY=${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}
+if [ -f "$PG_UNIT" ]; then
+  sed -i "s|^Exec=postgres .*|Exec=postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=${PG_MAX_CONNECTIONS:-100} -c app.encryption_key=${PG_ENC_KEY}|" \
+    "$PG_UNIT"
+fi
+if [ -f "$PGRST_UNIT" ]; then
+  sed -i "s|^Exec=postgrest .*|Exec=postgrest +RTS -M${POSTGREST_RTS_HEAP:-30M} -A2m -H24m -N1 -RTS|" \
+    "$PGRST_UNIT"
+fi
 
 chown 0:0 "$OUT"/*.env "$DROPIN/secrets.conf"
 chmod 400 "$OUT"/*.env "$DROPIN/secrets.conf"

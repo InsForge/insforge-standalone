@@ -21,8 +21,13 @@ APP_UNITS=(insforge-postgres insforge-postgrest insforge)
 detect_runtime() {
   if [ -f "$QUADLET_MARKER" ] && command -v podman >/dev/null 2>&1; then
     echo podman
-  elif command -v docker-compose >/dev/null 2>&1 || command -v docker >/dev/null 2>&1; then
+  elif command -v docker-compose >/dev/null 2>&1; then
     echo compose
+  elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    # Compose V2 plugin only (no `docker-compose` shim). The current fleet is
+    # all V1, but detecting `compose` and then calling a binary that does not
+    # exist would fail every verb, so pick the form that is actually present.
+    echo compose-v2
   else
     echo "insforge-ctl: no container runtime detected" >&2
     exit 1
@@ -50,7 +55,13 @@ if [ "$RUNTIME" = podman ] && [ "$(id -u)" != 0 ]; then
   exec sudo -n "$INSTALLED_CTL" "$@"
 fi
 
-compose() { (cd "$PROJECT_DIR" && docker-compose "$@"); }
+compose() {
+  if [ "$RUNTIME" = compose-v2 ]; then
+    (cd "$PROJECT_DIR" && docker compose "$@")
+  else
+    (cd "$PROJECT_DIR" && docker-compose "$@")
+  fi
+}
 
 # Load .env for the DB credentials used by the psql/pg_dump verbs.
 load_env() {

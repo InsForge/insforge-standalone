@@ -11,7 +11,11 @@ PublishPort=5430:3000
 EnvironmentFile=/etc/insforge/postgrest.env
 LogDriver=journald
 PodmanArgs=--network-alias=postgrest
-Exec=postgrest +RTS -M35M -A2m -H24m -N1 -RTS
+# The GHC heap cap is stamped by insforge-render-env from POSTGREST_RTS_HEAP
+# (auto-scale-memory.sh sizes it per tier as POSTGREST_MEMORY - 20M). Pinning
+# it would leave postgrest heap-starved relative to its cgroup allowance on
+# anything above nano.
+Exec=postgrest +RTS -M30M -A2m -H24m -N1 -RTS
 
 [Service]
 Restart=always
