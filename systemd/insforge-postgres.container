@@ -1,0 +1,29 @@
+[Unit]
+Description=InsForge Postgres (quadlet)
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+ContainerName=insforge-postgres
+Image=ghcr.io/insforge/postgres:v15.13.4
+Network=insforge.network
+PublishPort=5432:5432
+Volume=insforge-pgdata:/var/lib/postgresql/data
+Volume=/home/ec2-user/insforge-standalone/docker-init/db/db-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+Volume=/home/ec2-user/insforge-standalone/docker-init/db/jwt.sql:/docker-entrypoint-initdb.d/02-jwt.sql:ro
+Volume=/home/ec2-user/insforge-standalone/docker-init/db/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+EnvironmentFile=/etc/insforge/postgres.env
+LogDriver=journald
+HealthCmd=pg_isready -U postgres -d insforge -h 127.0.0.1
+HealthInterval=10s
+HealthRetries=30
+HealthStartPeriod=60s
+PodmanArgs=--network-alias=postgres
+Exec=postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=30
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

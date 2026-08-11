@@ -1,0 +1,22 @@
+[Unit]
+Description=InsForge PostgREST (quadlet)
+After=insforge-postgres.service
+Requires=insforge-postgres.service
+
+[Container]
+ContainerName=insforge-postgrest
+Image=docker.io/postgrest/postgrest:v12.2.12
+Network=insforge.network
+PublishPort=5430:3000
+EnvironmentFile=/etc/insforge/postgrest.env
+LogDriver=journald
+PodmanArgs=--network-alias=postgrest
+Exec=postgrest +RTS -M35M -A2m -H24m -N1 -RTS
+
+[Service]
+Restart=always
+# Gate on the DB actually accepting connections (podman 4.9 has no Notify=healthy)
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do /usr/bin/pg_isready -q -h 127.0.0.1 -p 5432 && exit 0; sleep 2; done; exit 1'
+
+[Install]
+WantedBy=multi-user.target
