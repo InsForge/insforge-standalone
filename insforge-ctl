@@ -43,6 +43,29 @@ load_env() {
   PGPASS_="${POSTGRES_PASSWORD:-postgres}"
 }
 
+# Re-install the quadlet units from the repo and re-derive the app image tag
+# from .env. Both matter because the control plane's flows assume compose
+# semantics: `git pull` then restart deployed a changed compose file, and
+# rewriting INSFORGE_OSS_VER in .env then restarting changed the image. Under
+# quadlet the units live in /etc/containers/systemd and the tag lives inside
+# insforge.container, so without this a unit change or a version bump silently
+# no-ops on podman.
+sync_units() {
+  [ "$RUNTIME" = podman ] || return 0
+  local src="$PROJECT_DIR/systemd"
+  [ -d "$src" ] || return 0
+  install -m 0644 "$src"/*.container "$src"/*.network /etc/containers/systemd/ 2>/dev/null || true
+  install -m 0755 "$src/insforge-render-env" /usr/local/bin/insforge-render-env 2>/dev/null || true
+  local ver
+  ver=$(grep -E '^INSFORGE_OSS_VER=' "$PROJECT_DIR/.env" 2>/dev/null | cut -d= -f2)
+  if [ -n "$ver" ]; then
+    sed -i "s|^Image=ghcr.io/insforge/insforge-oss:.*|Image=ghcr.io/insforge/insforge-oss:${ver}|" \
+      /etc/containers/systemd/insforge.container
+    podman pull "ghcr.io/insforge/insforge-oss:${ver}" >/dev/null 2>&1 || true
+  fi
+  systemctl daemon-reload
+}
+
 usage() {
   cat >&2 <<'USAGE'
 usage: insforge-ctl <verb> [args]
@@ -50,7 +73,8 @@ usage: insforge-ctl <verb> [args]
   runtime              print the detected runtime (podman|compose)
   up                   start the whole stack
   down                 stop the whole stack
-  restart              restart the whole stack (re-renders env first on podman)
+  restart              restart the whole stack (re-syncs units/env first on podman)
+  restart-app          restart only the app container, leaving Postgres up
   stop-apps            stop insforge + postgrest, leave postgres running
   start-all            start everything (used after stop-apps)
   upgrade <version>    switch the app image tag and restart
@@ -72,6 +96,7 @@ case "$verb" in
 
   up)
     if [ "$RUNTIME" = podman ]; then
+      sync_units
       /usr/local/bin/insforge-render-env
       systemctl daemon-reload
       systemctl start "${APP_UNITS[@]}"
@@ -90,15 +115,30 @@ case "$verb" in
 
   restart)
     if [ "$RUNTIME" = podman ]; then
-      # Re-render first: the control plane appends new keys to .env (Deno
-      # tokens, reserved secrets) and expects a restart to pick them up —
-      # that was implicit with compose, which re-read .env on every `up`.
+      # Re-sync units and the image tag, then re-render env: the control
+      # plane appends keys to .env and rewrites INSFORGE_OSS_VER, and expects a
+      # restart to pick both up — implicit under compose, which re-read .env
+      # and the compose file on every `up`.
+      sync_units
       /usr/local/bin/insforge-render-env
       systemctl daemon-reload
       systemctl restart "${APP_UNITS[@]}"
     else
       compose down
       compose up -d
+    fi
+    ;;
+
+  restart-app)
+    # App only. The reserved-secrets reset needs the app to re-read its
+    # secrets without bouncing Postgres, which a full-stack restart would do.
+    if [ "$RUNTIME" = podman ]; then
+      sync_units
+      /usr/local/bin/insforge-render-env
+      systemctl daemon-reload
+      systemctl restart insforge
+    else
+      compose restart insforge
     fi
     ;;
 
