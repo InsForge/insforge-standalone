@@ -30,6 +30,26 @@ detect_runtime() {
 }
 RUNTIME=$(detect_runtime)
 
+# Self-elevate for podman. systemctl/podman need root, but the control plane
+# runs instance commands as ec2-user. Callers therefore invoke this script
+# plainly (no sudo) and it re-execs the *installed, root-owned* copy under a
+# narrowly scoped sudoers rule.
+#
+# Why not let callers sudo this file directly: the repo checkout is owned by
+# ec2-user and updated by `git pull`, so a sudoers rule covering it would let
+# ec2-user rewrite the script and run arbitrary code as root -- blanket root
+# with extra steps. Only /usr/local/bin/insforge-ctl is root-owned, so only it
+# is safe to grant. The compose path needs no elevation at all (docker runs via
+# the docker group), which is why this is podman-only.
+INSTALLED_CTL=/usr/local/bin/insforge-ctl
+if [ "$RUNTIME" = podman ] && [ "$(id -u)" != 0 ]; then
+  [ -x "$INSTALLED_CTL" ] || {
+    echo "insforge-ctl: podman needs root and $INSTALLED_CTL is not installed" >&2
+    exit 1
+  }
+  exec sudo -n "$INSTALLED_CTL" "$@"
+fi
+
 compose() { (cd "$PROJECT_DIR" && docker-compose "$@"); }
 
 # Load .env for the DB credentials used by the psql/pg_dump verbs.
