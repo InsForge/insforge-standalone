@@ -1,0 +1,23 @@
+[Unit]
+Description=InsForge API (quadlet)
+After=insforge-postgres.service
+Requires=insforge-postgres.service
+
+[Container]
+ContainerName=insforge
+Image=ghcr.io/insforge/insforge-oss:v2.2.10-execnode-test
+Network=insforge.network
+PublishPort=7130:7130
+PublishPort=7131:7131
+EnvironmentFile=/etc/insforge/insforge.env
+LogDriver=journald
+PodmanArgs=-e AWS_CLOUDFRONT_PRIVATE_KEY
+WorkingDir=/app
+
+[Service]
+Restart=always
+TimeoutStartSec=600
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do /usr/bin/pg_isready -q -h 127.0.0.1 -p 5432 && exit 0; sleep 2; done; exit 1'
+
+[Install]
+WantedBy=multi-user.target

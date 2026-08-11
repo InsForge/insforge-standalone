@@ -1,0 +1,99 @@
+#!/bin/bash
+# Renders per-service env files + the multi-line-secret drop-in for the
+# quadlet units, from the project .env written by user-data.
+#
+# Run as ExecStartPre (with "+" for root) or from the provisioning script
+# before starting insforge-stack. Re-running is idempotent and is what makes
+# ".env edited -> restart -> takes effect" work the way it did under compose.
+set -euo pipefail
+
+ENV_FILE=${ENV_FILE:-/home/ec2-user/insforge-standalone/.env}
+OUT=/etc/insforge
+DROPIN=/etc/systemd/system/insforge.service.d
+
+# shellcheck disable=SC1090
+set -a; source "$ENV_FILE"; set +a
+umask 077
+mkdir -p "$OUT" "$DROPIN"
+
+# --- postgres -------------------------------------------------------------
+cat > "$OUT/postgres.env" <<EOF
+POSTGRES_USER=${POSTGRES_USER:-postgres}
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+POSTGRES_DB=${POSTGRES_DB:-insforge}
+EOF
+
+# --- postgrest ------------------------------------------------------------
+cat > "$OUT/postgrest.env" <<EOF
+PGRST_DB_URI=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
+PGRST_DB_SCHEMA=public
+PGRST_DB_ANON_ROLE=anon
+PGRST_JWT_SECRET=${JWT_SECRET}
+PGRST_DB_POOL=${PGRST_DB_POOL:-30}
+PGRST_DB_POOL_TIMEOUT=10
+PGRST_DB_POOL_ACQUISITION_TIMEOUT=10
+PGRST_DB_CHANNEL_ENABLED=true
+PGRST_DB_CHANNEL=pgrst
+PGRST_MAX_ROWS=1000
+PGRST_OPENAPI_SERVER_PROXY_URI=http://localhost:3000
+EOF
+
+# --- insforge -------------------------------------------------------------
+# Single-line vars only. Multi-line values (the CloudFront PEM) cannot be
+# expressed in an env-file at all -- neither systemd's EnvironmentFile= nor
+# podman's --env-file parse them -- so they go through the drop-in below.
+grep -vE '^(AWS_CLOUDFRONT_PRIVATE_KEY=|-----|[A-Za-z0-9+/]{40,}=*$|#|$)' "$ENV_FILE" \
+  | grep '=' > "$OUT/insforge.env"
+cat >> "$OUT/insforge.env" <<EOF
+POSTGRES_HOST=postgres
+POSTGREST_BASE_URL=http://postgrest:3000
+DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
+NODE_ENV=production
+PROJECT_ROOT=/app
+STORAGE_DIR=/insforge-storage
+LOGS_DIR=/insforge-logs
+MAX_JSON_BODY_SIZE=100mb
+MAX_URLENCODED_BODY_SIZE=10mb
+API_BASE_URL=${VITE_API_BASE_URL:-}
+AWS_REGION=${AWS_REGION:-us-east-2}
+EOF
+
+# --- multi-line secrets ---------------------------------------------------
+# systemd's Environment= accepts a double-quoted string with C-style escapes,
+# so the PEM survives as one logical line. The quadlet unit then passes it
+# through with `-e AWS_CLOUDFRONT_PRIVATE_KEY` (no value = inherit from the
+# podman process's environment). Verified byte-for-byte inside the container.
+python3 - "$DROPIN/secrets.conf" <<'PY'
+import os, sys
+out = sys.argv[1]
+pem = os.environ.get("AWS_CLOUDFRONT_PRIVATE_KEY", "")
+esc = pem.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+with open(out, "w") as f:
+    f.write("[Service]\n")
+    if esc:
+        f.write(f'Environment="AWS_CLOUDFRONT_PRIVATE_KEY={esc}"\n')
+PY
+
+# --- resource limits ------------------------------------------------------
+# auto-scale-memory.sh sizes these per instance type and writes them to .env.
+# Under compose they were `deploy.resources.limits`; here they become cgroup
+# settings on the generated units, which additionally gives us MemoryHigh --
+# throttle-before-OOM, something compose could not express.
+mem_high() { echo "$(( ${1%M} * 90 / 100 ))M"; }
+cpu_pct()  { awk "BEGIN {printf \"%d\", $1 * 100}"; }
+write_limits() {  # unit, memory, cpus
+  mkdir -p "/etc/systemd/system/$1.service.d"
+  cat > "/etc/systemd/system/$1.service.d/limits.conf" <<LIM
+[Service]
+MemoryMax=$2
+MemoryHigh=$(mem_high "$2")
+CPUQuota=$(cpu_pct "$3")%
+LIM
+}
+write_limits insforge-postgres  "${POSTGRES_MEMORY:-150M}"  "${POSTGRES_CPUS:-0.5}"
+write_limits insforge-postgrest "${POSTGREST_MEMORY:-50M}"  "${POSTGREST_CPUS:-0.3}"
+write_limits insforge           "${INSFORGE_MEMORY:-150M}"  "${INSFORGE_CPUS:-0.5}"
+
+chown 0:0 "$OUT"/*.env "$DROPIN/secrets.conf"
+chmod 400 "$OUT"/*.env "$DROPIN/secrets.conf"
+echo "rendered: $(ls "$OUT"/*.env | tr '\n' ' ') + secrets drop-in"
