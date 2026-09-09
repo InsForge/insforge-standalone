@@ -20,7 +20,8 @@ function sign(claims, secret = 'test-project-secret') {
   return `${h}.${p}.${s}`;
 }
 
-const STATE = 'instance-state-jwt';
+function signState(claims) { return sign(claims); }
+const STATE = signState({ provider: 'github', redirectUri: 'https://app.example/auth/callback', codeChallenge: 'c'.repeat(43) });
 const SID = crypto.createHash('sha256').update(STATE).digest('hex');
 const IDENTITY = { providerId: '42', email: 'victim@example.com', name: 'Victim' };
 const now = () => Math.floor(Date.now() / 1000);
@@ -55,9 +56,18 @@ server.listen(18080, async () => {
   r = await get('/api/database/advance/rawsql', 'POST');
   check('restricted rawsql still reaches the app', r.status === 200 && r.body === 'APP');
 
+  for (const variant of [
+    '/api/database/advance/rawsql/unrestricted/',
+    '/API/database/advance/RAWSQL/UNRESTRICTED',
+    '/api//database/advance/rawsql/unrestricted',
+  ]) {
+    r = await get(variant, 'POST');
+    check(`ban covers the spelling Express also routes: ${variant}`, r.status === 403, `status=${r.status}`);
+  }
+
   seen = null;
   r = await get(cb(`success=true&payload=${forged}`));
-  check('forged payload with no token is rejected', r.status === 401 && seen === null, `status=${r.status}`);
+  check('forged payload with no token is rejected', r.status !== 200 && seen === null, `status=${r.status}`);
 
   seen = null;
   const valid = sign(claims());
@@ -69,7 +79,7 @@ server.listen(18080, async () => {
 
   seen = null;
   r = await get(cb(`success=true&token=${valid}`));
-  check('replay of the same assertion is rejected', r.status === 401 && seen === null, `status=${r.status}`);
+  check('replay of the same assertion is rejected', r.status !== 200 && seen === null, `status=${r.status}`);
 
   for (const [name, c, secret] of [
     ['wrong project', claims({ projectId: 'someone-else' })],
@@ -82,8 +92,24 @@ server.listen(18080, async () => {
   ]) {
     seen = null;
     r = await get(cb(`success=true&token=${sign(c, secret)}`));
-    check(`rejected: ${name}`, r.status === 401 && seen === null, `status=${r.status}`);
+    check(`rejected: ${name}`, r.status !== 200 && seen === null, `status=${r.status}`);
   }
+
+  seen = null;
+  r = await get(`/API/auth/OAuth/shared/callback/${STATE}?success=true&payload=${forged}`);
+  check('gate covers the spelling Express also routes', r.status !== 200 && seen === null, `status=${r.status}`);
+
+  seen = null;
+  const googleState = signState({ provider: 'google', redirectUri: 'https://app.example/auth/callback' });
+  const crossProvider = sign(claims({ provider: 'google', sid: crypto.createHash('sha256').update(STATE).digest('hex') }));
+  r = await get(cb(`success=true&token=${crossProvider}`));
+  check('rejected: assertion from a provider the state was not minted for',
+    r.status !== 200 && seen === null, `status=${r.status}`);
+  void googleState;
+
+  seen = null;
+  r = await get(cb('success=true'));
+  check('rejection redirects to the app rather than showing raw JSON', r.status === 302, `status=${r.status}`);
 
   seen = null;
   r = await get(cb('success=false&error=access_denied'));

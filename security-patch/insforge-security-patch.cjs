@@ -29,11 +29,27 @@ const IDENTITY_TOKEN_TYPE = 'shared_oauth_identity';
 // Bounds the replay window and the consumed-assertion map when an assertion
 // arrives with a longer life than the cloud signs; loose enough for clock skew.
 const MAX_IDENTITY_LIFETIME_MS = 10 * 60 * 1000;
-const SHARED_CALLBACK_PATH = /^\/api\/auth\/oauth\/shared\/callback\/([^/?#]+)/;
-const BANNED_SQL_PATH = '/api/database/advance/rawsql/unrestricted';
-const HEALTH_PATH = '/api/health';
+const SHARED_CALLBACK_SEGMENTS = ['api', 'auth', 'oauth', 'shared', 'callback'];
+const BANNED_SQL_SEGMENTS = ['api', 'database', 'advance', 'rawsql', 'unrestricted'];
+const HEALTH_SEGMENTS = ['api', 'health'];
 
 const consumedAssertions = new Map();
+
+/**
+ * Express routes case-insensitively and tolerates a trailing slash, so the gate has
+ * to match the same spellings the router does or a capital letter walks past it.
+ * Segments are compared folded but returned raw: the state is a JWT and case matters.
+ */
+function pathSegments(requestUrl) {
+  return String(requestUrl || '').split('?')[0].split('/').filter(Boolean);
+}
+
+function matchesRoute(segments, route) {
+  return (
+    segments.length === route.length &&
+    route.every((part, index) => segments[index].toLowerCase() === part)
+  );
+}
 
 function base64UrlToBuffer(value) {
   return Buffer.from(String(value).replace(/-/g, '+').replace(/_/g, '/'), 'base64');
@@ -126,6 +142,14 @@ function gateSharedCallback(req, rawState) {
     return 'identity assertion is for a different login attempt';
   }
 
+  // Without this a caller can hold a state minted for one provider and have the
+  // cloud sign an identity from another, which the application then stores under
+  // the state's provider.
+  const state = verifyHs256(rawState, secret);
+  if (!state || state.provider !== payload.provider) {
+    return 'identity assertion is for a different provider than the login attempt';
+  }
+
   const expiresAt = typeof payload.exp === 'number' ? payload.exp * 1000 : 0;
   if (!expiresAt || expiresAt <= Date.now()) {
     return 'identity assertion has expired';
@@ -156,33 +180,51 @@ function refuse(res, status, message) {
   res.end(body);
 }
 
+/**
+ * Send a rejected login back where the application would have sent it. The state
+ * is signed by this instance, so the target it names already passed the redirect
+ * allowlist when the flow started.
+ */
+function refuseCallback(res, rawState, reason) {
+  const state = verifyHs256(rawState, process.env.JWT_SECRET || '');
+  if (state && typeof state.redirectUri === 'string') {
+    try {
+      const target = new URL(state.redirectUri);
+      target.searchParams.set('error', 'OAuth Authentication Failed');
+      res.writeHead(302, { Location: target.toString() });
+      res.end();
+      return;
+    } catch (error) {
+      // Unusable redirect target; fall through to the plain refusal.
+    }
+  }
+  refuse(res, 401, 'OAuth Authentication Failed');
+}
+
 function handleRequest(req, res) {
   const method = (req.method || 'GET').toUpperCase();
-  const path = String(req.url || '').split('?')[0];
+  const segments = pathSegments(req.url);
 
-  if (path === BANNED_SQL_PATH) {
+  if (matchesRoute(segments, BANNED_SQL_SEGMENTS)) {
+    console.warn('[security-patch] refused unrestricted SQL execution');
     refuse(res, 403, 'Unrestricted SQL execution is disabled on this project.');
     return true;
   }
 
-  if (path === HEALTH_PATH) {
+  if (matchesRoute(segments, HEALTH_SEGMENTS)) {
     res.setHeader('X-InsForge-Security-Patch', PATCH_VERSION);
     return false;
   }
 
-  if (method !== 'GET') {
+  if (method !== 'GET' || !matchesRoute(segments.slice(0, -1), SHARED_CALLBACK_SEGMENTS)) {
     return false;
   }
 
-  const match = SHARED_CALLBACK_PATH.exec(String(req.url || ''));
-  if (!match) {
-    return false;
-  }
-
-  const reason = gateSharedCallback(req, match[1]);
+  const rawState = segments[segments.length - 1];
+  const reason = gateSharedCallback(req, rawState);
   if (reason) {
     console.warn('[security-patch] rejected shared OAuth callback:', reason);
-    refuse(res, 401, 'OAuth Authentication Failed');
+    refuseCallback(res, rawState, reason);
     return true;
   }
 
