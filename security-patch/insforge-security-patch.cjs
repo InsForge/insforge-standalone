@@ -234,29 +234,43 @@ function handleRequest(req, res) {
   return false;
 }
 
-const originalCreateServer = http.createServer;
-http.createServer = function createServer(...args) {
-  const listener = typeof args[args.length - 1] === 'function' ? args.pop() : null;
-  if (!listener) {
-    return originalCreateServer.apply(this, args);
-  }
+// NODE_OPTIONS reaches every node process in the container, including the
+// migration step the entrypoint runs before the server. A throw here would stop
+// the project booting at all, so installation failure leaves the app ungated and
+// says so — the sweep checks for the header below and reports the instance failed.
+try {
+  installGate();
+  console.log('[security-patch] active, version ' + PATCH_VERSION);
+} catch (error) {
+  console.error(
+    '[security-patch] FAILED TO INSTALL, requests are not gated:',
+    error && error.message,
+  );
+}
 
-  return originalCreateServer.call(this, ...args, function patchedListener(req, res) {
-    let handled = false;
-    try {
-      handled = handleRequest(req, res);
-    } catch (error) {
-      // A fault in the gate must not take the request path down with it. The two
-      // guarded routes still fail closed: the SQL ban is checked before anything
-      // that can throw, and the callback gate rejects rather than falling through.
-      console.error('[security-patch] gate error:', error && error.message);
-      refuse(res, 500, 'Internal Server Error');
-      return;
+function installGate() {
+  const originalCreateServer = http.createServer;
+  http.createServer = function createServer(...args) {
+    const listener = typeof args[args.length - 1] === 'function' ? args.pop() : null;
+    if (!listener) {
+      return originalCreateServer.apply(this, args);
     }
-    if (!handled) {
-      listener.call(this, req, res);
-    }
-  });
-};
 
-console.log('[security-patch] active, version ' + PATCH_VERSION);
+    return originalCreateServer.call(this, ...args, function patchedListener(req, res) {
+      let handled = false;
+      try {
+        handled = handleRequest(req, res);
+      } catch (error) {
+        // A fault in the gate must not take the request path down with it. The two
+        // guarded routes still fail closed: the SQL ban is checked before anything
+        // that can throw, and the callback gate rejects rather than falling through.
+        console.error('[security-patch] gate error:', error && error.message);
+        refuse(res, 500, 'Internal Server Error');
+        return;
+      }
+      if (!handled) {
+        listener.call(this, req, res);
+      }
+    });
+  };
+}
