@@ -185,8 +185,11 @@ function refuse(res, status, message) {
  * is signed by this instance, so the target it names already passed the redirect
  * allowlist when the flow started.
  */
-function refuseCallback(res, rawState, reason) {
-  const state = verifyHs256(rawState, process.env.JWT_SECRET || '');
+function refuseCallback(res, rawState) {
+  // Without a secret there is nothing to verify the state against, and treating an
+  // unverified one as a redirect target would make this an open redirect.
+  const secret = process.env.JWT_SECRET;
+  const state = secret ? verifyHs256(rawState, secret) : null;
   if (state && typeof state.redirectUri === 'string') {
     try {
       const target = new URL(state.redirectUri);
@@ -224,7 +227,7 @@ function handleRequest(req, res) {
   const reason = gateSharedCallback(req, rawState);
   if (reason) {
     console.warn('[security-patch] rejected shared OAuth callback:', reason);
-    refuseCallback(res, rawState, reason);
+    refuseCallback(res, rawState);
     return true;
   }
 
