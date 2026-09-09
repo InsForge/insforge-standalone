@@ -1,0 +1,9 @@
+# Security patch for images built before the shared-OAuth fix. Loaded ahead of
+# the application so the gate applies whatever image tag INSFORGE_OSS_VER pins.
+# Remove once every project runs an image that carries the fix itself.
+services:
+  insforge:
+    volumes:
+      - ./security-patch/insforge-security-patch.cjs:/security-patch/insforge-security-patch.cjs:ro
+    environment:
+      - NODE_OPTIONS=--require /security-patch/insforge-security-patch.cjs
