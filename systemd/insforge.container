@@ -16,6 +16,10 @@ Network=insforge.network
 PublishPort=7130:7130
 PublishPort=7131:7131
 EnvironmentFile=/etc/insforge/insforge.env
+# Security patch for images built before the shared-OAuth fix; gates requests
+# ahead of the application. Remove once every project runs an image with the fix.
+Volume=/home/ec2-user/insforge-standalone/security-patch/insforge-security-patch.cjs:/security-patch/insforge-security-patch.cjs:ro
+Environment="NODE_OPTIONS=--require /security-patch/insforge-security-patch.cjs"
 LogDriver=journald
 PodmanArgs=-e AWS_CLOUDFRONT_PRIVATE_KEY
 WorkingDir=/app
