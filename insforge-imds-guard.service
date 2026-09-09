@@ -1,0 +1,19 @@
+[Unit]
+Description=Drop traffic from the InsForge Postgres container to the EC2 instance metadata service
+Documentation=file:///home/ec2-user/insforge-standalone/insforge-imds-guard
+# The rule lives in the raw table, which neither dockerd nor netavark manages,
+# so it does not need the runtime up — only to be in place before the container
+# is. Both runtimes are named: which one exists depends on the AMI, and systemd
+# ignores ordering against a unit that is not installed.
+After=network-pre.target
+Wants=network-pre.target
+Before=docker.service insforge-postgres.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/insforge-imds-guard apply
+ExecStop=/usr/local/bin/insforge-imds-guard remove
+
+[Install]
+WantedBy=multi-user.target

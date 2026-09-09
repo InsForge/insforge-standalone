@@ -58,6 +58,7 @@ consumed by that control plane, so this is the contract it has to satisfy:
 | AWS CLI v2 **and** `unzip` | The S3 backup/restore helpers and the SSM-association wait shell out to `aws`. Provisioning installs the CLI if absent, and needs unzip to unpack it — an image with neither killed provisioning three times |
 | SSM agent from the **deb**, not snap | Removing the snap agent kills the process executing the user-data script, so the swap only works at bake time |
 | `systemd-zram-generator`, `zram-size = ram` | Swap is how a nano survives; installing the generator creates zram0 at ram/2 immediately and the config only takes effect on the next boot |
+| `iptables` (the iptables-nft front end Ubuntu ships) | `../insforge-imds-guard` pins one raw-table rule that keeps the Postgres container off the instance metadata service; `insforge-ctl up`/`restart` install and enable it on every run, and without the binary the rule is silently absent |
 
 Anything the units or `insforge-ctl` start depending on has to be added there
 and asserted in that script's post-boot checklist, not discovered at 20 seconds
