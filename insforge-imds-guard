@@ -1,0 +1,174 @@
+#!/bin/bash
+# insforge-imds-guard — keep the project's Postgres container off the EC2
+# instance metadata service (IMDS, 169.254.169.254).
+#
+# Why: the database runs user-controlled SQL and ships the `http` extension
+# (schedules depend on it), so `SELECT http_get('http://169.254.169.254/...')`
+# — no superuser needed — reads this instance's IAM role credentials. The app
+# container legitimately uses that same endpoint for S3 (instance-profile
+# credentials), so neither a host-wide block nor an IMDS hop limit of 1 is
+# available: the block has to single out Postgres.
+#
+# How: the container carries a fixed MAC in both runtime profiles
+# (docker-compose.yml `mac_address:`, systemd/insforge-postgres.container
+# `--mac-address`), and one rule in the host's raw/PREROUTING chain drops
+# anything from that MAC to IMDS. A MAC rather than an IP because a fixed IP
+# needs a pinned subnet, and that forces every existing instance to recreate
+# its bridge network; under quadlet the network unit is `create --ignore`, so
+# the old network would silently survive and the pinned IP would then refuse
+# to start. A MAC pin is an ordinary container recreate.
+#
+# raw/PREROUTING rather than DOCKER-USER: dockerd and netavark both own chains
+# in filter/nat and neither touches raw, so the same rule works on both
+# runtimes and survives their restarts. It also sees the packet before the
+# SNAT that would hide which container sent it.
+#
+# IPv4 only. The bridge networks here carry no IPv6, so fd00:ec2::254 is not
+# reachable from the container in the first place.
+#
+# Callers: the systemd unit (apply/remove), user-data and insforge-ctl
+# (install), and hands (status/verify). Needs root and self-elevates with
+# `sudo -n`, so one invocation works from ec2-user on AL2023 (blanket
+# NOPASSWD) and from insforge-ctl on podman (root by then).
+set -euo pipefail
+
+# The one place the MAC and the target are spelled out. docker-compose.yml and
+# systemd/insforge-postgres.container repeat the MAC as literals because
+# neither can read a variable from here; insforge-imds-guard.test.sh checks the
+# three agree. Locally administered (02:...); the payload spells INSFG.
+PG_MAC=02:49:4e:53:46:47
+IMDS=169.254.169.254/32
+CONTAINER=insforge-postgres
+UNIT=insforge-imds-guard.service
+INSTALLED=/usr/local/bin/insforge-imds-guard
+TAG=insforge-imds-guard
+
+# Matches and target of the single rule. -I, -C and -D all take this same
+# array, so the check can never look for a different rule than the insert made.
+RULE=(PREROUTING -m mac --mac-source "$PG_MAC" -d "$IMDS" -m comment --comment "$TAG" -j DROP)
+ipt() { iptables -w 5 -t raw "$@"; }
+
+SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: insforge-imds-guard <verb>
+
+  install   copy this script and its unit into place, enable the unit, apply
+            (run it from the insforge-standalone checkout; idempotent)
+  apply     insert the drop rule if it is absent
+  remove    delete the drop rule
+  status    exit 0 if the rule is present, 1 if not
+  verify    status, plus: the running postgres container carries the pinned
+            MAC, and a TCP connect to IMDS from inside it does not succeed
+USAGE
+  exit 64
+}
+
+apply() {
+  command -v iptables >/dev/null 2>&1 || {
+    echo "$TAG: iptables not found; postgres can reach IMDS on this host" >&2
+    exit 1
+  }
+  if ipt -C "${RULE[@]}" 2>/dev/null; then
+    echo "$TAG: rule already present"
+  else
+    ipt -I "${RULE[@]}"
+    echo "$TAG: rule inserted (raw/PREROUTING: $PG_MAC -> $IMDS DROP)"
+  fi
+}
+
+remove() {
+  local n=0
+  while ipt -C "${RULE[@]}" 2>/dev/null; do
+    ipt -D "${RULE[@]}"
+    n=$((n + 1))
+  done
+  echo "$TAG: removed $n rule(s)"
+}
+
+status() {
+  if ipt -C "${RULE[@]}" 2>/dev/null; then
+    echo "$TAG: ACTIVE (raw/PREROUTING drops $PG_MAC -> $IMDS)"
+    return 0
+  fi
+  echo "$TAG: NOT ACTIVE — postgres can reach IMDS"
+  return 1
+}
+
+# Which CLI owns the postgres container on this box. Same answer as
+# insforge-ctl's detection, asked of the container rather than the units.
+runtime() {
+  if command -v podman >/dev/null 2>&1 && podman container exists "$CONTAINER" 2>/dev/null; then
+    echo podman
+  elif command -v docker >/dev/null 2>&1 && docker inspect "$CONTAINER" >/dev/null 2>&1; then
+    echo docker
+  fi
+}
+
+verify() {
+  local rc=0 rt mac
+  status || rc=1
+
+  rt=$(runtime)
+  if [ -z "$rt" ]; then
+    echo "$TAG: container $CONTAINER not found; MAC pin and connect probe skipped" >&2
+    return $rc
+  fi
+
+  # Per-network form: Docker 25+ no longer reports a container-level MAC.
+  mac=$("$rt" inspect -f '{{range .NetworkSettings.Networks}}{{.MacAddress}}{{end}}' "$CONTAINER" 2>/dev/null || true)
+  if [ "$(printf '%s' "$mac" | tr 'A-F' 'a-f')" = "$PG_MAC" ]; then
+    echo "$TAG: $CONTAINER carries the pinned MAC $PG_MAC ($rt)"
+  else
+    echo "$TAG: $CONTAINER has MAC '${mac:-none}', expected $PG_MAC — the rule matches nothing;" \
+         "recreate the container from the current docker-compose.yml / quadlet unit" >&2
+    rc=1
+  fi
+
+  # A TCP connect to IMDS from inside the container. With the rule in force the
+  # SYN is dropped and this times out (124). Off EC2 the address is unroutable
+  # and it fails too, so a pass here is only meaningful on an instance. bash,
+  # not sh: /dev/tcp is a bash feature, and the postgres image has bash.
+  if "$rt" exec "$CONTAINER" timeout 3 bash -c "exec 3<>/dev/tcp/${IMDS%/*}/80" 2>/dev/null; then
+    echo "$TAG: FAIL — $CONTAINER connected to IMDS" >&2
+    rc=1
+  else
+    echo "$TAG: $CONTAINER cannot connect to IMDS"
+  fi
+  return $rc
+}
+
+do_install() {
+  local src_dir
+  src_dir=$(dirname "$SELF")
+  [ -f "$src_dir/$UNIT" ] || {
+    echo "$TAG: $UNIT not found next to $SELF; run install from the insforge-standalone checkout" >&2
+    exit 1
+  }
+  [ "$SELF" = "$INSTALLED" ] || install -m 0755 "$SELF" "$INSTALLED"
+  install -m 0644 "$src_dir/$UNIT" "/etc/systemd/system/$UNIT"
+  systemctl daemon-reload
+  systemctl enable --now "$UNIT"
+  # enable --now is a no-op on a unit that is already active, so apply directly
+  # too: a changed rule spec then lands now instead of on the next boot.
+  apply
+}
+
+[ $# -ge 1 ] || usage
+verb=$1
+case "$verb" in
+  -h|--help|help) usage ;;
+esac
+if [ "$(id -u)" != 0 ]; then
+  exec sudo -n "$SELF" "$@"
+fi
+
+case "$verb" in
+  install) do_install ;;
+  apply)   apply ;;
+  remove)  remove ;;
+  status)  status ;;
+  verify)  verify ;;
+  *)       usage ;;
+esac

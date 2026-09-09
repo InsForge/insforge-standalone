@@ -120,9 +120,30 @@ warn_if_locally_modified() {
   "${as_owner[@]}" rev-parse --git-dir >/dev/null 2>&1 || return 0
   # --untracked-files=all, because `git diff` does not report a file that was
   # never added — an untracked systemd/*.container would install silently.
-  [ -z "$("${as_owner[@]}" status --porcelain --untracked-files=all -- systemd insforge-ctl 2>/dev/null)" ] && return 0
-  echo "warning: $PROJECT_DIR has uncommitted changes under systemd/ or insforge-ctl;" \
+  [ -z "$("${as_owner[@]}" status --porcelain --untracked-files=all -- systemd insforge-ctl insforge-imds-guard insforge-imds-guard.service 2>/dev/null)" ] && return 0
+  echo "warning: $PROJECT_DIR has uncommitted changes under systemd/, insforge-ctl or insforge-imds-guard;" \
        "installing them as root anyway" >&2
+}
+
+# Install (or refresh) the postgres IMDS guard from the checkout and make sure
+# its firewall rule is in force before the stack comes up. The database runs
+# untrusted SQL with the http extension loaded, and from the bridge it can reach
+# the instance metadata service — this instance's IAM role credentials. The
+# guard pins the postgres container to a MAC and drops that one path at the
+# host; the app container keeps IMDS for S3. See the script's header.
+#
+# Runs on every up/restart because that is how an instance provisioned before
+# the guard existed acquires it: the control plane's restart is `git pull` then
+# this. Idempotent and cheap. Non-fatal on the same reasoning as
+# sync_and_render — a host without iptables must not lose its database over a
+# hardening step, but the failure has to reach the SSM output and the journal.
+# Needs root: on podman we already are, on compose (ec2-user) the guard
+# self-elevates with sudo -n, which AL2023's ec2-user has.
+ensure_imds_guard() {
+  local guard="$PROJECT_DIR/insforge-imds-guard"
+  [ -x "$guard" ] || return 0   # checkout predates the guard
+  "$guard" install \
+    || echo "warning: insforge-imds-guard install failed; postgres can reach IMDS until it succeeds" >&2
 }
 
 # Install the units and render them into place as one operation, staging first.
@@ -234,6 +255,7 @@ case "$verb" in
     ;;
 
   up)
+    ensure_imds_guard
     if [ "$RUNTIME" = podman ]; then
       sync_and_render
       systemctl start "${APP_UNITS[@]}"
@@ -251,6 +273,7 @@ case "$verb" in
     ;;
 
   restart)
+    ensure_imds_guard
     if [ "$RUNTIME" = podman ]; then
       # Re-sync units and the image tag, then re-render env: the control
       # plane appends keys to .env and rewrites INSFORGE_OSS_VER, and expects a

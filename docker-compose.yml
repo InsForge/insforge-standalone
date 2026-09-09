@@ -3,6 +3,12 @@ services:
   postgres:
     image: ghcr.io/insforge/postgres:v15.13.4
     container_name: insforge-postgres
+    # Pinned so insforge-imds-guard's host firewall rule can single this
+    # container out: it drops traffic from this MAC to the EC2 metadata service
+    # (untrusted SQL + the http extension would otherwise read the instance's
+    # IAM credentials). Must equal PG_MAC in ./insforge-imds-guard and the
+    # --mac-address in systemd/insforge-postgres.container.
+    mac_address: 02:49:4e:53:46:47
     restart: unless-stopped
     command: postgres -c config_file=/etc/postgresql/postgresql.conf -c max_connections=${PG_MAX_CONNECTIONS:-100} -c app.encryption_key='${ENCRYPTION_KEY:-${JWT_SECRET:-dev-secret-please-change-in-production}}'
     # No hard CPU caps on any service: single-tenant host, so caps only

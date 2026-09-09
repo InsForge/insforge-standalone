@@ -26,7 +26,11 @@ HealthCmd=pg_isready -U postgres -d insforge -h 127.0.0.1
 HealthInterval=10s
 HealthRetries=30
 HealthStartPeriod=60s
-PodmanArgs=--network-alias=postgres --stop-timeout=30
+# --mac-address: pinned so insforge-imds-guard's host firewall rule can single
+# this container out (it drops traffic from this MAC to the EC2 metadata
+# service). Must equal PG_MAC in ../insforge-imds-guard and mac_address in
+# docker-compose.yml.
+PodmanArgs=--network-alias=postgres --stop-timeout=30 --mac-address=02:49:4e:53:46:47
 # max_connections and app.encryption_key are stamped here by
 # insforge-render-env from .env on every start -- they cannot be read from the
 # EnvironmentFile because they are server start parameters, and they cannot be
