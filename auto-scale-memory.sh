@@ -95,7 +95,19 @@ elif [ "$TOTAL_MEM" -ge 1800  ]; then PG_MAX_CONNECTIONS=80;  PGRST_DB_POOL=45  
 elif [ "$TOTAL_MEM" -ge 900   ]; then PG_MAX_CONNECTIONS=50;  PGRST_DB_POOL=25    # micro ~1G
 else                                  PG_MAX_CONNECTIONS=30;  PGRST_DB_POOL=15    # nano ~0.5G
 fi
-echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS} (RAM ${TOTAL_MEM}MB)"
+
+# Backend (insforge) pg pool. The OSS default of 20 does not fit the small tiers:
+# backend pool + PGRST_DB_POOL + direct client connections must stay under
+# max_connections minus the 3 superuser-reserved slots. On a nano (27 usable) the
+# default 20 plus PostgREST's 15 already exceeds the budget, and a burst of API
+# requests ends in "sorry, too many clients already". Small and up keep 20.
+# Needs an insforge-oss image that reads POSTGRES_POOL_MAX (InsForge/InsForge#2070);
+# older images ignore the variable and keep their built-in 20.
+if   [ "$TOTAL_MEM" -ge 1800 ]; then POSTGRES_POOL_MAX=20   # small and up: OSS default
+elif [ "$TOTAL_MEM" -ge 900  ]; then POSTGRES_POOL_MAX=12   # micro: 50 max, 25 PostgREST
+else                                 POSTGRES_POOL_MAX=8    # nano: 30 max, 15 PostgREST
+fi
+echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}, POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX} (RAM ${TOTAL_MEM}MB)"
 
 # Verify total doesn't exceed usable memory. Per-service rounding can land
 # up to 2MB over budget (e.g. three .5 round-ups near the 1800MB cutoff);
@@ -122,7 +134,7 @@ ENV_FILE=".env"
 cp "$ENV_FILE" "${ENV_FILE}.backup.$(date +%Y%m%d_%H%M%S)"
 
 # Remove existing memory settings if present
-sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^POSTGRES_CPUS=/d; /^POSTGREST_CPUS=/d; /^INSFORGE_CPUS=/d; /^DENO_CPUS=/d; /^VECTOR_CPUS=/d; /^NODE_EXPORTER_CPUS=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Auto-generated resource limits/d; /^# Total system memory:/d; /^# Total CPUs:/d; /^# Usable memory:/d; /^# Scaling factor:/d; /^# CPU scaling factor:/d' "$ENV_FILE"
+sed -i.tmp '/^POSTGRES_MEMORY=/d; /^POSTGREST_MEMORY=/d; /^PGRST_DB_POOL=/d; /^PG_MAX_CONNECTIONS=/d; /^POSTGRES_POOL_MAX=/d; /^POSTGREST_RTS_HEAP=/d; /^INSFORGE_MEMORY=/d; /^POSTGRES_CPUS=/d; /^POSTGREST_CPUS=/d; /^INSFORGE_CPUS=/d; /^DENO_CPUS=/d; /^VECTOR_CPUS=/d; /^NODE_EXPORTER_CPUS=/d; /^DENO_MEMORY=/d; /^VECTOR_MEMORY=/d; /^NODE_EXPORTER_MEMORY=/d; /^# Auto-generated memory limits/d; /^# Auto-generated resource limits/d; /^# Total system memory:/d; /^# Total CPUs:/d; /^# Usable memory:/d; /^# Scaling factor:/d; /^# CPU scaling factor:/d' "$ENV_FILE"
 rm -f "${ENV_FILE}.tmp"
 
 # Append new resource settings
@@ -138,6 +150,7 @@ POSTGREST_RTS_HEAP=${POSTGREST_RTS_HEAP}M
 INSFORGE_MEMORY=${INSFORGE_MEM}M
 PGRST_DB_POOL=${PGRST_DB_POOL}
 PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS}
+POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX}
 EOF
 
 echo "Resource configuration updated in ${ENV_FILE}"
