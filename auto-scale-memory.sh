@@ -87,12 +87,16 @@ if [ "$POSTGREST_RTS_HEAP" -lt 20 ]; then POSTGREST_RTS_HEAP=20; fi
 # Connection budget (must hold on every tier, or bursts hit "too many clients"):
 #   PGRST_DB_POOL + 20 (InsForge backend pg pool, hard-coded `max: 20` in
 #   backend/src/infra/database/database.manager.ts) + >=8 headroom <= PG_MAX_CONNECTIONS
-# Headroom = superuser_reserved_connections (3) + pg_cron scheduler and running
-# jobs + realtime/CLI/admin sessions. Larger tiers keep PGRST_DB_POOL at ~55-60%
-# of max_connections (medium/xl under-pooling caused PGRST003 "timed out acquiring
-# connection from pool"). On nano/micro RAM is the constraint (each connection is a
-# Postgres process), so max_connections rises only slightly and the PostgREST pool
-# shrinks instead.
+# Headroom = superuser_reserved_connections (3) + PostgREST LISTEN session + backend
+# realtime listener + pg_cron scheduler and running jobs + CLI/admin sessions.
+# Small and larger tiers keep PGRST_DB_POOL at ~56-64% of max_connections
+# (medium/xl under-pooling caused PGRST003 "timed out acquiring connection from
+# pool"). On nano/micro RAM is the constraint (each connection is a Postgres
+# process), so max_connections rises only slightly and the PostgREST pool shrinks
+# instead.
+# PGRST_DB_POOL also sets POSTGREST_MAX_SOCKETS (the backend's keep-alive socket cap
+# to PostgREST, see docker-compose.yml / systemd/insforge-render-env), so changing
+# the pool moves both knobs.
 if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_MAX_CONNECTIONS=700; PGRST_DB_POOL=450   # 2xl ~32G
 elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_MAX_CONNECTIONS=400; PGRST_DB_POOL=250   # xl ~16G
 elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_MAX_CONNECTIONS=250; PGRST_DB_POOL=150   # large ~8G
