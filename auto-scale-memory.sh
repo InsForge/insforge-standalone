@@ -84,16 +84,26 @@ if [ "$POSTGREST_RTS_HEAP" -lt 20 ]; then POSTGREST_RTS_HEAP=20; fi
 # --- Scale PostgREST pool + Postgres max_connections with instance RAM ----------
 # Each Postgres backend costs ~5-10MB, so these are BOUNDED per RAM tier (NOT scaled
 # linearly with the memory factor, which would OOM Postgres on large instances).
-# PGRST_DB_POOL is kept at ~55-60% of max_connections, leaving headroom for the app,
-# admin, and direct DB connections. Fixes both nano over-pooling (OOM risk) and
-# medium/xl under-pooling (PGRST003 "timed out acquiring connection from pool").
+# Connection budget (must hold on every tier, or bursts hit "too many clients"):
+#   PGRST_DB_POOL + 20 (InsForge backend pg pool, hard-coded `max: 20` in
+#   backend/src/infra/database/database.manager.ts) + >=8 headroom <= PG_MAX_CONNECTIONS
+# Headroom = superuser_reserved_connections (3) + PostgREST LISTEN session + backend
+# realtime listener + pg_cron scheduler and running jobs + CLI/admin sessions.
+# Small and larger tiers keep PGRST_DB_POOL at ~56-64% of max_connections
+# (medium/xl under-pooling caused PGRST003 "timed out acquiring connection from
+# pool"). On nano/micro RAM is the constraint (each connection is a Postgres
+# process), so max_connections rises only slightly and the PostgREST pool shrinks
+# instead.
+# PGRST_DB_POOL also sets POSTGREST_MAX_SOCKETS (the backend's keep-alive socket cap
+# to PostgREST, see docker-compose.yml / systemd/insforge-render-env), so changing
+# the pool moves both knobs.
 if   [ "$TOTAL_MEM" -ge 30000 ]; then PG_MAX_CONNECTIONS=700; PGRST_DB_POOL=450   # 2xl ~32G
 elif [ "$TOTAL_MEM" -ge 15000 ]; then PG_MAX_CONNECTIONS=400; PGRST_DB_POOL=250   # xl ~16G
 elif [ "$TOTAL_MEM" -ge 7500  ]; then PG_MAX_CONNECTIONS=250; PGRST_DB_POOL=150   # large ~8G
 elif [ "$TOTAL_MEM" -ge 3500  ]; then PG_MAX_CONNECTIONS=150; PGRST_DB_POOL=90    # medium ~4G
 elif [ "$TOTAL_MEM" -ge 1800  ]; then PG_MAX_CONNECTIONS=80;  PGRST_DB_POOL=45    # small ~2G
-elif [ "$TOTAL_MEM" -ge 900   ]; then PG_MAX_CONNECTIONS=50;  PGRST_DB_POOL=25    # micro ~1G
-else                                  PG_MAX_CONNECTIONS=30;  PGRST_DB_POOL=15    # nano ~0.5G
+elif [ "$TOTAL_MEM" -ge 900   ]; then PG_MAX_CONNECTIONS=50;  PGRST_DB_POOL=20    # micro ~1G
+else                                  PG_MAX_CONNECTIONS=40;  PGRST_DB_POOL=10    # nano ~0.5G
 fi
 echo "Connection scaling: PGRST_DB_POOL=${PGRST_DB_POOL}, PG_MAX_CONNECTIONS=${PG_MAX_CONNECTIONS} (RAM ${TOTAL_MEM}MB)"
 
