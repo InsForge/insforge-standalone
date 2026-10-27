@@ -130,6 +130,9 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
       - POSTGREST_BASE_URL=http://postgrest:3000
       - POSTGREST_MAX_SOCKETS=${PGRST_DB_POOL:-30}
+      # Backend pg pool size, set per RAM tier by auto-scale-memory.sh. Empty
+      # falls back to the image default (20).
+      - POSTGRES_POOL_MAX=${POSTGRES_POOL_MAX:-}
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-insforge}
       - CLOUD_API_HOST=${CLOUD_API_HOST}
       # Deno Subhosting Configuration (legacy, read by OSS < v2 Deno Deploy migration)
