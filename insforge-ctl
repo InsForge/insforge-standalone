@@ -153,7 +153,9 @@ ensure_imds_guard() {
 # starting next finds them. Same lifecycle and failure policy as the guard:
 # every up/restart, idempotent, non-fatal — a missing file only means the app
 # falls back to IMDS, which works until the instance's hop limit is lowered.
-# The control plane lowers it only after `status` succeeds here.
+# Nothing here lowers it: the fleet rollout does, per instance, and only after
+# `insforge-aws-creds status` exits 0 there (it checks the config and that the
+# credentials have not expired). `insforge-ctl status` does not check this.
 ensure_aws_creds() {
   local creds="$PROJECT_DIR/insforge-aws-creds"
   [ -x "$creds" ] || return 0   # checkout predates it

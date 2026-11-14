@@ -11,7 +11,7 @@ cd "$(dirname "$0")" || exit 1
 CREDS=$PWD/insforge-aws-creds
 WORK=$(mktemp -d)
 STUBS=$WORK/stubs; OUT=$WORK/out; mkdir -p "$STUBS"
-export INSFORGE_AWS_CREDS_DIR=$OUT FAKE_STATE=$WORK/imds.json
+export INSFORGE_AWS_CREDS_DIR=$OUT FAKE_STATE=$WORK/imds.json CHOWN_LOG=$WORK/chown.log
 pass=0
 fail=0
 ok()  { echo "PASS: $1"; pass=$((pass+1)); }
@@ -20,6 +20,11 @@ bad() { echo "FAIL: $1"; fail=$((fail+1)); }
 cat > "$STUBS/id" <<'STUB'
 #!/bin/bash
 echo 0
+STUB
+# chown would need root; record what was asked instead.
+cat > "$STUBS/chown" <<'STUB'
+#!/bin/bash
+echo "chown $*" >> "$CHOWN_LOG"
 STUB
 cat > "$STUBS/sudo" <<'STUB'
 #!/bin/bash
@@ -82,11 +87,13 @@ if [ "$(cat "$OUT/config" 2>/dev/null)" = "$(printf '[default]\ncredential_proce
   ok "config names credential_process = cat <file>"
 else bad "config content: $(cat "$OUT/config" 2>/dev/null)"; fi
 
-# 3. files are readable by a non-root container user and nothing is left behind.
-if [ "$(stat -c %a "$OUT/credentials.json" 2>/dev/null || stat -f %Lp "$OUT/credentials.json")" = 644 ] \
+# 3. the role's secret is root:1000 0640 — readable by the app's `node` user
+#    (gid 1000) and root, by no other host user — and nothing is left behind.
+if [ "$(stat -c %a "$OUT/credentials.json" 2>/dev/null || stat -f %Lp "$OUT/credentials.json")" = 640 ] \
+   && grep -qE '^chown 0:1000 .*/\.credentials\.' "$CHOWN_LOG" \
    && ! compgen -G "$OUT/.*.??????" >/dev/null; then
-  ok "credentials.json is 0644 and no temp files remain"
-else bad "permissions/temp files: $(ls -la "$OUT")"; fi
+  ok "credentials.json is root:1000 0640 and no temp files remain"
+else bad "permissions/owner/temp files: $(ls -la "$OUT"; cat "$CHOWN_LOG" 2>/dev/null)"; fi
 
 # 4. a rotated role is picked up on the next refresh.
 creds_json ASIASECOND Success "$future" > "$FAKE_STATE"
@@ -99,8 +106,26 @@ if ! "$CREDS" refresh >/dev/null 2>&1 && grep -q ASIASECOND "$OUT/credentials.js
   ok "IMDS failure exits non-zero and keeps the last good credentials"
 else bad "IMDS failure handling"; fi
 
-# 6. status: OK while valid, failing once expired or missing.
+# 5b. an already-expired or unparseable Expiration is rejected the same way.
+creds_json ASIASTALE Success "2020-01-01T00:00:00Z" > "$FAKE_STATE"
+if ! "$CREDS" refresh >/dev/null 2>&1 && grep -q ASIASECOND "$OUT/credentials.json"; then
+  ok "expired Expiration from IMDS is rejected; last good credentials kept"
+else bad "expired Expiration accepted"; fi
+creds_json ASIAGARBLE Success "tomorrow-ish" > "$FAKE_STATE"
+if ! "$CREDS" refresh >/dev/null 2>&1 && grep -q ASIASECOND "$OUT/credentials.json"; then
+  ok "malformed Expiration from IMDS is rejected; last good credentials kept"
+else bad "malformed Expiration accepted"; fi
+creds_json ASIASECOND Success "$future" > "$FAKE_STATE"
+
+# 6. status: OK while valid, failing on a wrong config, once expired, or missing.
 if "$CREDS" status >/dev/null 2>&1; then ok "status OK on valid credentials"; else bad "status on valid credentials"; fi
+cp "$OUT/config" "$WORK/config.good"
+printf '[default]\ncredential_process = cat /elsewhere/credentials.json\n' > "$OUT/config"
+if ! "$CREDS" status >/dev/null 2>&1; then ok "status fails when config points elsewhere"; else bad "status ignored a wrong config"; fi
+rm -f "$OUT/config"
+if ! "$CREDS" status >/dev/null 2>&1; then ok "status fails when config is missing"; else bad "status ignored a missing config"; fi
+"$CREDS" refresh >/dev/null 2>&1
+if cmp -s "$OUT/config" "$WORK/config.good"; then ok "refresh rewrites a missing config"; else bad "refresh did not restore config"; fi
 python3 -I - "$OUT/credentials.json" <<'PY'
 import json, sys
 p = sys.argv[1]; d = json.load(open(p)); d["Expiration"] = "2020-01-01T00:00:00Z"; json.dump(d, open(p, "w"))

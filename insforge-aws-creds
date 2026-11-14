@@ -39,6 +39,8 @@ TAG=insforge-aws-creds
 OUT_DIR=${INSFORGE_AWS_CREDS_DIR:-/run/insforge-aws}
 IMDS=${INSFORGE_IMDS_ENDPOINT:-http://169.254.169.254}
 INSTALLED=/usr/local/bin/insforge-aws-creds
+# Group of the user the app runs as inside the container (`node` in node:alpine).
+APP_GID=1000
 UNITS=(insforge-aws-creds.service insforge-aws-creds.timer)
 SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
 
@@ -69,48 +71,72 @@ refresh() {
 
   mkdir -p "$OUT_DIR"
   chmod 0755 "$OUT_DIR"
-  # Readable by the container whatever user it runs as. On a project instance
-  # anything that can read /run as a host user can already sudo.
   local tmp
   tmp=$(mktemp "$OUT_DIR/.credentials.XXXXXX")
+  # Validate before touching the live file: an unparseable or already-expired
+  # Expiration must fail the refresh and leave the last good credentials alone.
   if ! printf '%s' "$raw" | python3 -I -c '
-import json, sys
+import json, sys, datetime
 d = json.load(sys.stdin)
 if d.get("Code") != "Success":
     sys.exit("IMDS returned Code=%s" % d.get("Code"))
 for k in ("AccessKeyId", "SecretAccessKey", "Token", "Expiration"):
     if not d.get(k):
         sys.exit("IMDS credentials missing " + k)
+try:
+    exp = datetime.datetime.strptime(d["Expiration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+except ValueError:
+    sys.exit("IMDS Expiration is not an ISO-8601 UTC timestamp: %r" % d["Expiration"])
+if exp <= datetime.datetime.now(datetime.timezone.utc):
+    sys.exit("IMDS credentials already expired at " + d["Expiration"])
 json.dump({"Version": 1, "AccessKeyId": d["AccessKeyId"],
            "SecretAccessKey": d["SecretAccessKey"], "SessionToken": d["Token"],
            "Expiration": d["Expiration"]}, sys.stdout)
 ' > "$tmp"; then
     rm -f "$tmp"
-    echo "$TAG: IMDS returned unusable credentials" >&2
+    echo "$TAG: IMDS returned unusable credentials; keeping the previous file" >&2
     exit 1
   fi
-  chmod 0644 "$tmp"
+  # root:APP_GID 0640. Since insforge-oss v2.3.1 the image's entrypoint drops to
+  # `node` (uid/gid 1000 in node:alpine) before starting the app, so that is
+  # who runs credential_process's `cat`; older images run as root. Both
+  # runtimes are rootful with no user namespace, so in-container ids are host
+  # ids. On the host gid 1000 is ec2-user's group, which can sudo anyway; every
+  # other host user is kept out of the role.
+  chown "0:$APP_GID" "$tmp"
+  chmod 0640 "$tmp"
   # rename(2) inside the mounted directory, so the container sees either the old
   # file or the new one, never a partial write. (A single-file bind mount would
   # keep pointing at the replaced inode, which is why the directory is mounted.)
   mv -f "$tmp" "$OUT_DIR/credentials.json"
 
-  if [ ! -f "$OUT_DIR/config" ] || ! grep -qF "$OUT_DIR/credentials.json" "$OUT_DIR/config"; then
+  local want
+  want=$(printf '[default]\ncredential_process = cat %s/credentials.json' "$OUT_DIR")
+  if [ "$(cat "$OUT_DIR/config" 2>/dev/null)" != "$want" ]; then
     tmp=$(mktemp "$OUT_DIR/.config.XXXXXX")
-    printf '[default]\ncredential_process = cat %s/credentials.json\n' "$OUT_DIR" > "$tmp"
+    printf '%s\n' "$want" > "$tmp"
     chmod 0644 "$tmp"
     mv -f "$tmp" "$OUT_DIR/config"
   fi
   echo "$TAG: refreshed credentials for role $role"
 }
 
+# The check to run before lowering an instance's IMDS hop limit: the config the
+# app's AWS_CONFIG_FILE names must point credential_process at the file, and the
+# file must hold credentials that have not expired.
 status() {
-  local f="$OUT_DIR/credentials.json"
+  local f="$OUT_DIR/credentials.json" want
+  want=$(printf '[default]\ncredential_process = cat %s' "$f")
+  [ "$(cat "$OUT_DIR/config" 2>/dev/null)" = "$want" ] || {
+    echo "$TAG: BAD CONFIG — $OUT_DIR/config missing or not '$want'"; return 1; }
   [ -f "$f" ] || { echo "$TAG: NOT PRESENT — $f missing; the app falls back to IMDS"; return 1; }
   python3 -I - "$f" <<'PY'
 import json, sys, datetime
-d = json.load(open(sys.argv[1]))
-exp = datetime.datetime.strptime(d["Expiration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+try:
+    d = json.load(open(sys.argv[1]))
+    exp = datetime.datetime.strptime(d["Expiration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+except (ValueError, KeyError) as e:
+    print("insforge-aws-creds: UNREADABLE credentials file (%s)" % e); sys.exit(1)
 left = (exp - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
 if left <= 0:
     print("insforge-aws-creds: EXPIRED at %s" % d["Expiration"]); sys.exit(1)

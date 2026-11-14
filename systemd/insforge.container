@@ -2,8 +2,9 @@
 Description=InsForge API (quadlet)
 After=insforge-postgres.service insforge-aws-creds.service
 Requires=insforge-postgres.service
-# Wants, not Requires: a failed refresh leaves the SDK falling back to IMDS,
-# which beats not starting the app.
+# Wants, not Requires: a failed refresh keeps the last good credentials file,
+# and if none was ever written the SDK falls back to IMDS. Either beats not
+# starting the app.
 Wants=insforge-aws-creds.service
 
 [Container]
