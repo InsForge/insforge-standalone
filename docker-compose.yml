@@ -149,6 +149,9 @@ services:
       - MAX_FILE_SIZE=${MAX_FILE_SIZE:-}
       - AWS_S3_BUCKET=${AWS_S3_BUCKET:-insforge-storage}
       - AWS_REGION=us-east-2
+      # Instance-role credentials via a host-written file instead of IMDS, so
+      # the instance can run with an IMDS hop limit of 1. See ./insforge-aws-creds.
+      - AWS_CONFIG_FILE=/run/insforge-aws/config
       - S3_ENDPOINT_URL=${S3_ENDPOINT_URL:-}
       - S3_ACCESS_KEY_ID=${S3_ACCESS_KEY_ID:-}
       - S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-}
@@ -166,6 +169,10 @@ services:
       - ANALYTICS_PROVIDER=${ANALYTICS_PROVIDER:-cloudwatch}
       - CLOUDWATCH_LOG_GROUP=${CLOUDWATCH_LOG_GROUP}
       - HOSTNAME_OVERRIDE=${HOSTNAME_OVERRIDE:-}
+    volumes:
+      # Directory, not file: insforge-aws-creds replaces credentials.json by
+      # rename, which a single-file bind mount would not follow.
+      - /run/insforge-aws:/run/insforge-aws:ro
     networks:
       - insforge-network
     logging:

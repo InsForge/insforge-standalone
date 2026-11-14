@@ -5,9 +5,11 @@
 # Why: the database runs user-controlled SQL and ships the `http` extension
 # (schedules depend on it), so `SELECT http_get('http://169.254.169.254/...')`
 # — no superuser needed — reads this instance's IAM role credentials. The app
-# container legitimately uses that same endpoint for S3 (instance-profile
-# credentials), so neither a host-wide block nor an IMDS hop limit of 1 is
-# available: the block has to single out Postgres.
+# container used to need that same endpoint for S3, so the block had to single
+# out Postgres. insforge-aws-creds now hands the app its credentials through a
+# file, which lets the instance's IMDS hop limit drop to 1 and closes IMDS to
+# every container; this rule stays as the Postgres layer for instances that
+# are still at 2.
 #
 # How: the container carries a fixed MAC in both runtime profiles
 # (docker-compose.yml `mac_address:`, systemd/insforge-postgres.container

@@ -1,0 +1,179 @@
+#!/bin/bash
+# insforge-aws-creds — hand the app container this instance's IAM role
+# credentials through a file, so no container needs the instance metadata
+# service (IMDS, 169.254.169.254) at all.
+#
+# Why: the instance role reaches every tenant's storage, backups and logs, and
+# any container that can reach IMDS can read it. Postgres runs user SQL with the
+# `http` extension, and the app is an internet-facing server where one SSRF is
+# enough. insforge-imds-guard closes the Postgres path only. With this in place
+# the instance's IMDS hop limit can drop to 1, which stops every container on
+# the bridge network from getting an IMDSv2 token, while the host keeps IMDS.
+# A file and not a local HTTP endpoint (AWS_CONTAINER_CREDENTIALS_FULL_URI)
+# because an SSRF can reach an endpoint but cannot read a file.
+#
+# How: `refresh` reads the role credentials from IMDS on the host and writes
+#   $OUT_DIR/credentials.json  credential_process output: Version 1, keys, Expiration
+#   $OUT_DIR/config            [default] credential_process = cat <that file>
+# The app container mounts $OUT_DIR read-only and gets AWS_CONFIG_FILE pointing
+# at the config. credential_process, not a plain credentials file: the SDK
+# caches credentials that have no expiration for the life of the client, so a
+# plain file would go stale when the role rotates (~6h) and S3 would start
+# failing with ExpiredToken. Process credentials carry Expiration, so once less
+# than 5 minutes remain the SDK re-runs `cat` in the background and the next
+# request uses whatever the timer wrote (and past Expiration it re-reads before
+# signing, never sending expired credentials). The timer runs every minute:
+# IMDS only promises new credentials 5 minutes before expiry, so a slower
+# timer could leave the file stale for the whole of that window.
+#
+# If the file is missing, AWS_CONFIG_FILE names a file with no profile and the
+# SDK falls through to IMDS, so installing this is safe on an instance whose
+# hop limit is still 2.
+#
+# Callers: the systemd timer (refresh), insforge-ctl up/restart (install), and
+# hands (status). Needs root and self-elevates with `sudo -n`, like
+# insforge-imds-guard.
+set -euo pipefail
+
+TAG=insforge-aws-creds
+OUT_DIR=${INSFORGE_AWS_CREDS_DIR:-/run/insforge-aws}
+IMDS=${INSFORGE_IMDS_ENDPOINT:-http://169.254.169.254}
+INSTALLED=/usr/local/bin/insforge-aws-creds
+# Group of the user the app runs as inside the container (`node` in node:alpine).
+APP_GID=1000
+UNITS=(insforge-aws-creds.service insforge-aws-creds.timer)
+SELF=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+
+usage() {
+  cat >&2 <<'USAGE'
+usage: insforge-aws-creds <verb>
+  install   copy this script and its units into place, enable the timer, refresh
+            (run it from the insforge-standalone checkout; idempotent)
+  refresh   write the current role credentials for the app container
+  status    exit 0 if the credentials file exists and is not expired, 1 if not
+USAGE
+  exit 64
+}
+
+imds() {
+  curl -fsS --max-time 5 -H "X-aws-ec2-metadata-token: $TOKEN" "$IMDS/latest/$1"
+}
+
+refresh() {
+  TOKEN=$(curl -fsS --max-time 5 -X PUT -H "X-aws-ec2-metadata-token-ttl-seconds: 300" "$IMDS/latest/api/token") || {
+    echo "$TAG: cannot get an IMDSv2 token" >&2; exit 1; }
+  local role raw
+  role=$(imds meta-data/iam/security-credentials/ | head -n1) || {
+    echo "$TAG: no instance role attached" >&2; exit 1; }
+  [ -n "$role" ] || { echo "$TAG: no instance role attached" >&2; exit 1; }
+  raw=$(imds "meta-data/iam/security-credentials/$role") || {
+    echo "$TAG: cannot read credentials for role $role" >&2; exit 1; }
+
+  mkdir -p "$OUT_DIR"
+  chmod 0755 "$OUT_DIR"
+  local tmp
+  tmp=$(mktemp "$OUT_DIR/.credentials.XXXXXX")
+  # Validate before touching the live file: an unparseable or already-expired
+  # Expiration must fail the refresh and leave the last good credentials alone.
+  if ! printf '%s' "$raw" | python3 -I -c '
+import json, sys, datetime
+d = json.load(sys.stdin)
+if d.get("Code") != "Success":
+    sys.exit("IMDS returned Code=%s" % d.get("Code"))
+for k in ("AccessKeyId", "SecretAccessKey", "Token", "Expiration"):
+    if not d.get(k):
+        sys.exit("IMDS credentials missing " + k)
+try:
+    exp = datetime.datetime.strptime(d["Expiration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+except ValueError:
+    sys.exit("IMDS Expiration is not an ISO-8601 UTC timestamp: %r" % d["Expiration"])
+if exp <= datetime.datetime.now(datetime.timezone.utc):
+    sys.exit("IMDS credentials already expired at " + d["Expiration"])
+json.dump({"Version": 1, "AccessKeyId": d["AccessKeyId"],
+           "SecretAccessKey": d["SecretAccessKey"], "SessionToken": d["Token"],
+           "Expiration": d["Expiration"]}, sys.stdout)
+' > "$tmp"; then
+    rm -f "$tmp"
+    echo "$TAG: IMDS returned unusable credentials; keeping the previous file" >&2
+    exit 1
+  fi
+  # root:APP_GID 0640. Since insforge-oss v2.3.1 the image's entrypoint drops to
+  # `node` (uid/gid 1000 in node:alpine) before starting the app, so that is
+  # who runs credential_process's `cat`; older images run as root. Both
+  # runtimes are rootful with no user namespace, so in-container ids are host
+  # ids. On the host gid 1000 is ec2-user's group, which can sudo anyway; every
+  # other host user is kept out of the role.
+  chown "0:$APP_GID" "$tmp"
+  chmod 0640 "$tmp"
+  # rename(2) inside the mounted directory, so the container sees either the old
+  # file or the new one, never a partial write. (A single-file bind mount would
+  # keep pointing at the replaced inode, which is why the directory is mounted.)
+  mv -f "$tmp" "$OUT_DIR/credentials.json"
+
+  local want
+  want=$(printf '[default]\ncredential_process = cat %s/credentials.json' "$OUT_DIR")
+  if [ "$(cat "$OUT_DIR/config" 2>/dev/null)" != "$want" ]; then
+    tmp=$(mktemp "$OUT_DIR/.config.XXXXXX")
+    printf '%s\n' "$want" > "$tmp"
+    chmod 0644 "$tmp"
+    mv -f "$tmp" "$OUT_DIR/config"
+  fi
+  echo "$TAG: refreshed credentials for role $role"
+}
+
+# The check to run before lowering an instance's IMDS hop limit: the config the
+# app's AWS_CONFIG_FILE names must point credential_process at the file, and the
+# file must hold credentials that have not expired.
+status() {
+  local f="$OUT_DIR/credentials.json" want
+  want=$(printf '[default]\ncredential_process = cat %s' "$f")
+  [ "$(cat "$OUT_DIR/config" 2>/dev/null)" = "$want" ] || {
+    echo "$TAG: BAD CONFIG — $OUT_DIR/config missing or not '$want'"; return 1; }
+  [ -f "$f" ] || { echo "$TAG: NOT PRESENT — $f missing; the app falls back to IMDS"; return 1; }
+  python3 -I - "$f" <<'PY'
+import json, sys, datetime
+try:
+    d = json.load(open(sys.argv[1]))
+    exp = datetime.datetime.strptime(d["Expiration"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+except (ValueError, KeyError) as e:
+    print("insforge-aws-creds: UNREADABLE credentials file (%s)" % e); sys.exit(1)
+left = (exp - datetime.datetime.now(datetime.timezone.utc)).total_seconds()
+if left <= 0:
+    print("insforge-aws-creds: EXPIRED at %s" % d["Expiration"]); sys.exit(1)
+print("insforge-aws-creds: OK (key %s..., expires %s, %d min left)" % (d["AccessKeyId"][:8], d["Expiration"], left // 60))
+PY
+}
+
+do_install() {
+  local src_dir u
+  src_dir=$(dirname "$SELF")
+  for u in "${UNITS[@]}"; do
+    [ -f "$src_dir/$u" ] || {
+      echo "$TAG: $u not found next to $SELF; run install from the insforge-standalone checkout" >&2
+      exit 1
+    }
+  done
+  [ "$SELF" = "$INSTALLED" ] || install -m 0755 "$SELF" "$INSTALLED"
+  for u in "${UNITS[@]}"; do install -m 0644 "$src_dir/$u" "/etc/systemd/system/$u"; done
+  systemctl daemon-reload
+  systemctl enable --now insforge-aws-creds.timer
+  # The timer's first run is OnBootSec on a fresh boot but may be minutes away
+  # on a running instance, and the app is about to (re)start: write it now.
+  refresh
+}
+
+[ $# -ge 1 ] || usage
+verb=$1
+case "$verb" in
+  -h|--help|help) usage ;;
+esac
+if [ "$(id -u)" != 0 ]; then
+  exec sudo -n "$SELF" "$@"
+fi
+
+case "$verb" in
+  install) do_install ;;
+  refresh) refresh ;;
+  status)  status ;;
+  *) usage ;;
+esac

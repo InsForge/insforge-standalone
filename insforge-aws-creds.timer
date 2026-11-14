@@ -1,0 +1,16 @@
+[Unit]
+Description=Refresh the InsForge app container's AWS credentials every minute
+Documentation=file:///home/ec2-user/insforge-standalone/insforge-aws-creds
+
+[Timer]
+# /run is tmpfs, so the file is gone after a reboot: write it right away.
+OnBootSec=0
+# IMDS only promises new role credentials "at least 5 minutes" before the old
+# ones expire, and the SDK starts re-reading the file 5 minutes before expiry.
+# Every minute keeps the file at most a minute behind IMDS, so that window
+# never closes on stale credentials. Each run is three local IMDS requests.
+OnUnitActiveSec=1min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

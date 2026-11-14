@@ -1,0 +1,13 @@
+[Unit]
+Description=Write the instance role credentials for the InsForge app container
+Documentation=file:///home/ec2-user/insforge-standalone/insforge-aws-creds
+After=network-online.target
+Wants=network-online.target
+# Ordering only (not Requires): on boot the file should exist before the app
+# starts, but the app must still start if IMDS is briefly unreachable. Both
+# runtimes are named; systemd ignores ordering against a unit not installed.
+Before=docker.service insforge.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/insforge-aws-creds refresh

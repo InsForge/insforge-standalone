@@ -1,7 +1,11 @@
 [Unit]
 Description=InsForge API (quadlet)
-After=insforge-postgres.service
+After=insforge-postgres.service insforge-aws-creds.service
 Requires=insforge-postgres.service
+# Wants, not Requires: a failed refresh keeps the last good credentials file,
+# and if none was ever written the SDK falls back to IMDS. Either beats not
+# starting the app.
+Wants=insforge-aws-creds.service
 
 [Container]
 # Default tag mirrors docker-compose.yml on this branch; provisioning
@@ -22,11 +26,19 @@ Volume=/home/ec2-user/insforge-standalone/security-patch/insforge-security-patch
 Environment="NODE_OPTIONS=--require /security-patch/insforge-security-patch.cjs"
 LogDriver=journald
 PodmanArgs=-e AWS_CLOUDFRONT_PRIVATE_KEY
+# Instance-role credentials via a host-written file instead of IMDS, so the
+# instance can run with an IMDS hop limit of 1 (see ../insforge-aws-creds). The
+# directory is mounted, not the file: the file is replaced by rename.
+Volume=/run/insforge-aws:/run/insforge-aws:ro
+Environment=AWS_CONFIG_FILE=/run/insforge-aws/config
 WorkingDir=/app
 
 [Service]
 Restart=always
 TimeoutStartSec=600
+# podman refuses a bind mount whose source is missing, and /run is emptied on
+# reboot; an empty directory just means the SDK falls back to IMDS.
+ExecStartPre=/bin/mkdir -p /run/insforge-aws
 ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do /usr/bin/pg_isready -q -h 127.0.0.1 -p 5432 && exit 0; sleep 2; done; exit 1'
 
 [Install]
