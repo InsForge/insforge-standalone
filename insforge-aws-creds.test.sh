@@ -143,5 +143,52 @@ if grep -q '^Volume=/run/insforge-aws:/run/insforge-aws:ro$' systemd/insforge.co
   ok "quadlet, compose and script agree on /run/insforge-aws"
 else bad "mount/env path drift between quadlet, compose and script"; fi
 
+# 8. install: copies the script and both units, reloads systemd, enables the
+#    timer, and writes the credentials immediately (the app may start next).
+export CALL_LOG=$WORK/calls.log
+: > "$CALL_LOG"
+for tool in systemctl install; do
+  cat > "$STUBS/$tool" <<STUB
+#!/bin/bash
+echo "$tool \$*" >> "\$CALL_LOG"
+STUB
+  chmod +x "$STUBS/$tool"
+done
+rm -f "$OUT/credentials.json"
+if "$CREDS" install >/dev/null 2>&1 \
+   && grep -qx "install -m 0755 $CREDS /usr/local/bin/insforge-aws-creds" "$CALL_LOG" \
+   && grep -qx "install -m 0644 $PWD/insforge-aws-creds.service /etc/systemd/system/insforge-aws-creds.service" "$CALL_LOG" \
+   && grep -qx "install -m 0644 $PWD/insforge-aws-creds.timer /etc/systemd/system/insforge-aws-creds.timer" "$CALL_LOG" \
+   && [ "$(grep -n 'systemctl daemon-reload' "$CALL_LOG" | cut -d: -f1)" -lt "$(grep -n 'systemctl enable --now insforge-aws-creds.timer' "$CALL_LOG" | cut -d: -f1)" ] \
+   && grep -q ASIASECOND "$OUT/credentials.json"; then
+  ok "install copies script + both units, daemon-reloads, enables the timer, refreshes now"
+else bad "install lifecycle: $(cat "$CALL_LOG")"; fi
+
+# 9. install refuses to run outside the checkout (units not next to it).
+mkdir -p "$WORK/elsewhere" && cp "$CREDS" "$WORK/elsewhere/insforge-aws-creds"
+if ! "$WORK/elsewhere/insforge-aws-creds" install >/dev/null 2>&1; then
+  ok "install outside the checkout fails instead of installing without units"
+else bad "install ran without its units"; fi
+
+# 10. insforge-ctl installs it on up and restart, after the guard, before the
+#     stack starts, and never lets a failure abort the verb.
+ctl_has() { awk -v verb="$1" '
+  $0 ~ "^  " verb "\\)$" {in_v=1; next}
+  in_v && /^    ;;$/ {exit}
+  in_v {print}' insforge-ctl; }
+up_ok=1
+for verb in up restart; do
+  body=$(ctl_has "$verb")
+  g=$(printf '%s\n' "$body" | grep -n 'ensure_imds_guard' | cut -d: -f1)
+  c=$(printf '%s\n' "$body" | grep -n 'ensure_aws_creds' | cut -d: -f1)
+  s=$(printf '%s\n' "$body" | grep -nE 'systemctl (start|restart)|compose up -d' | head -1 | cut -d: -f1)
+  { [ -n "$g" ] && [ -n "$c" ] && [ -n "$s" ] && [ "$g" -lt "$c" ] && [ "$c" -lt "$s" ]; } || up_ok=0
+done
+if [ "$up_ok" = 1 ] \
+   && grep -q '"$creds" install \\$' insforge-ctl \
+   && grep -q '|| echo "warning: insforge-aws-creds install failed' insforge-ctl; then
+  ok "insforge-ctl up/restart: guard, then creds, then start; install failure only warns"
+else bad "insforge-ctl wiring of ensure_aws_creds"; fi
+
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]
