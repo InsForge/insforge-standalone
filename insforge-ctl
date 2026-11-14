@@ -120,8 +120,8 @@ warn_if_locally_modified() {
   "${as_owner[@]}" rev-parse --git-dir >/dev/null 2>&1 || return 0
   # --untracked-files=all, because `git diff` does not report a file that was
   # never added — an untracked systemd/*.container would install silently.
-  [ -z "$("${as_owner[@]}" status --porcelain --untracked-files=all -- systemd insforge-ctl insforge-imds-guard insforge-imds-guard.service 2>/dev/null)" ] && return 0
-  echo "warning: $PROJECT_DIR has uncommitted changes under systemd/, insforge-ctl or insforge-imds-guard;" \
+  [ -z "$("${as_owner[@]}" status --porcelain --untracked-files=all -- systemd insforge-ctl insforge-imds-guard insforge-imds-guard.service insforge-aws-creds insforge-aws-creds.service insforge-aws-creds.timer 2>/dev/null)" ] && return 0
+  echo "warning: $PROJECT_DIR has uncommitted changes under systemd/, insforge-ctl, insforge-imds-guard or insforge-aws-creds;" \
        "installing them as root anyway" >&2
 }
 
@@ -130,7 +130,9 @@ warn_if_locally_modified() {
 # untrusted SQL with the http extension loaded, and from the bridge it can reach
 # the instance metadata service — this instance's IAM role credentials. The
 # guard pins the postgres container to a MAC and drops that one path at the
-# host; the app container keeps IMDS for S3. See the script's header.
+# host. The app container gets its credentials from insforge-aws-creds instead
+# (below), which is what lets the instance drop its IMDS hop limit to 1; the
+# guard stays as the Postgres-specific layer for instances still at 2.
 #
 # Runs on every up/restart because that is how an instance provisioned before
 # the guard existed acquires it: the control plane's restart is `git pull` then
@@ -144,6 +146,19 @@ ensure_imds_guard() {
   [ -x "$guard" ] || return 0   # checkout predates the guard
   "$guard" install \
     || echo "warning: insforge-imds-guard install failed; postgres can reach IMDS until it succeeds" >&2
+}
+
+# Install (or refresh) the timer that writes the instance role credentials to
+# /run/insforge-aws for the app container, and write them once now so the app
+# starting next finds them. Same lifecycle and failure policy as the guard:
+# every up/restart, idempotent, non-fatal — a missing file only means the app
+# falls back to IMDS, which works until the instance's hop limit is lowered.
+# The control plane lowers it only after `status` succeeds here.
+ensure_aws_creds() {
+  local creds="$PROJECT_DIR/insforge-aws-creds"
+  [ -x "$creds" ] || return 0   # checkout predates it
+  "$creds" install \
+    || echo "warning: insforge-aws-creds install failed; the app needs IMDS (hop limit 2) until it succeeds" >&2
 }
 
 # Install the units and render them into place as one operation, staging first.
@@ -256,6 +271,7 @@ case "$verb" in
 
   up)
     ensure_imds_guard
+    ensure_aws_creds
     if [ "$RUNTIME" = podman ]; then
       sync_and_render
       systemctl start "${APP_UNITS[@]}"
@@ -274,6 +290,7 @@ case "$verb" in
 
   restart)
     ensure_imds_guard
+    ensure_aws_creds
     if [ "$RUNTIME" = podman ]; then
       # Re-sync units and the image tag, then re-render env: the control
       # plane appends keys to .env and rewrites INSFORGE_OSS_VER, and expects a

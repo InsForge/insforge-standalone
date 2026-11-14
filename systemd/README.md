@@ -59,6 +59,7 @@ consumed by that control plane, so this is the contract it has to satisfy:
 | SSM agent from the **deb**, not snap | Removing the snap agent kills the process executing the user-data script, so the swap only works at bake time |
 | `systemd-zram-generator`, `zram-size = ram` | Swap is how a nano survives; installing the generator creates zram0 at ram/2 immediately and the config only takes effect on the next boot |
 | `iptables` (the iptables-nft front end Ubuntu ships) | `../insforge-imds-guard` pins one raw-table rule that keeps the Postgres container off the instance metadata service; `insforge-ctl up`/`restart` install and enable it on every run, and without the binary the rule is silently absent |
+| `curl` and `python3` on the host | `../insforge-aws-creds` (a 1-minute systemd timer) reads the instance role credentials from IMDS and writes them to `/run/insforge-aws/` for the app container's `credential_process`, so no container needs IMDS and the instance can run with hop limit 1. `insforge-ctl up`/`restart` install it; without it the app falls back to IMDS and only works at hop limit 2 |
 
 Anything the units or `insforge-ctl` start depending on has to be added there
 and asserted in that script's post-boot checklist, not discovered at 20 seconds
